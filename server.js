@@ -12,7 +12,6 @@ const app = express();
 const PORT = Number(process.env.PORT) || 3000;
 const OWNER_EMAIL = process.env.OWNER_EMAIL || '';
 const SESSION_SECRET = process.env.SESSION_SECRET || 'dev-secret-change-me';
-const PUBLIC_BASE_URL = process.env.PUBLIC_BASE_URL || `http://localhost:${PORT}`;
 const GOOGLE_CLIENT_ID = process.env.GOOGLE_CLIENT_ID || '';
 const DATA_DIR = process.env.DATA_DIR
   ? path.resolve(process.env.DATA_DIR)
@@ -27,7 +26,6 @@ const ORDERS_PATH = path.join(DATA_DIR, 'orders.json');
 const SESSION_COOKIE = 'club_session';
 const sessions = new Map();
 
-const APPROVAL_TOKEN_TTL_MS = 1000 * 60 * 60 * 48;
 const SIGNUP_TOKEN_TTL_MS = 1000 * 60 * 15;
 
 const MERCH_ITEMS = [
@@ -201,7 +199,7 @@ function getUserFromRequest(req) {
   const users = readJsonArray(USERS_PATH);
   const user = users.find((u) => u.id === session.userId) || null;
 
-  if (!user || user.approved === false) {
+  if (!user) {
     sessions.delete(token);
     return null;
   }
@@ -240,35 +238,6 @@ function buildTransport() {
     secure,
     auth: { user, pass }
   });
-}
-
-function createApprovalToken(user) {
-  return createSignedToken({
-    type: 'approval',
-    userId: user.id,
-    email: user.email,
-    iat: Date.now()
-  });
-}
-
-function verifyApprovalToken(token) {
-  const parsed = verifySignedToken(token);
-  if (!parsed.valid) return parsed;
-
-  const payload = parsed.payload;
-  if (payload.type !== 'approval') {
-    return { valid: false, reason: 'Wrong token type' };
-  }
-
-  if (!Number.isFinite(payload.iat) || Date.now() - payload.iat > APPROVAL_TOKEN_TTL_MS) {
-    return { valid: false, reason: 'Approval link expired' };
-  }
-
-  if (!payload.userId || !payload.email) {
-    return { valid: false, reason: 'Invalid approval payload' };
-  }
-
-  return { valid: true, payload };
 }
 
 function createSignupToken({ email, sub, name }) {
@@ -337,20 +306,15 @@ async function maybeSendSignupNotificationEmail(user) {
     return { emailed: false, reason: 'Email not configured' };
   }
 
-  const token = createApprovalToken(user);
-  const approvalUrl = `${PUBLIC_BASE_URL}/api/admin/approve?token=${encodeURIComponent(token)}`;
-  const subject = `New signup pending approval: ${user.firstName} ${user.lastName}`;
+  const subject = `New signup: ${user.firstName} ${user.lastName}`;
   const body = [
-    'A new user signed up via Google and is awaiting approval.',
+    'A new user signed up via Google.',
     '',
     `First Name: ${user.firstName}`,
     `Last Name: ${user.lastName}`,
     `Initials: ${user.initials}`,
     `Email: ${user.email}`,
-    `Signed up at: ${new Date().toISOString()}`,
-    '',
-    'Approve this account:',
-    approvalUrl
+    `Signed up at: ${new Date().toISOString()}`
   ].join('\n');
 
   await transport.sendMail({
@@ -422,9 +386,14 @@ app.post('/api/auth/google', async (req, res) => {
     user.googleSub = sub;
     changed = true;
   }
-  if (typeof user.approved !== 'boolean') {
-    // Preserve access for existing pre-approval accounts.
+  if (user.approved === false) {
     user.approved = true;
+    user.approvedAt = user.approvedAt || new Date().toISOString();
+    changed = true;
+  }
+  if (typeof user.approved !== 'boolean') {
+    user.approved = true;
+    user.approvedAt = user.approvedAt || new Date().toISOString();
     changed = true;
   }
 
@@ -449,13 +418,6 @@ app.post('/api/auth/google', async (req, res) => {
 
   if (changed) {
     writeJsonArray(USERS_PATH, users);
-  }
-
-  if (user.approved === false) {
-    return res.status(403).json({
-      error: 'Account pending approval. You will be notified once approved.',
-      pendingApproval: true
-    });
   }
 
   setSessionCookie(res, user.id);
@@ -498,15 +460,16 @@ app.post('/api/auth/google/signup', async (req, res) => {
       email,
       provider: 'google',
       googleSub: sub || null,
-      approved: false,
+      approved: true,
+      approvedAt: new Date().toISOString(),
       createdAt: new Date().toISOString()
     };
     users.push(user);
   }
 
-  if (typeof user.approved !== 'boolean') {
-    // Preserve access for existing pre-approval accounts.
+  if (user.approved !== true) {
     user.approved = true;
+    user.approvedAt = user.approvedAt || new Date().toISOString();
   }
 
   user.provider = 'google';
@@ -518,59 +481,20 @@ app.post('/api/auth/google/signup', async (req, res) => {
 
   writeJsonArray(USERS_PATH, users);
 
-  if (user.approved === false) {
-    let notificationStatus = { emailed: false, reason: 'Email not attempted' };
-    try {
-      notificationStatus = await maybeSendSignupNotificationEmail(user);
-    } catch (err) {
-      notificationStatus = { emailed: false, reason: `Email failed: ${err.message}` };
-    }
-
-    return res.status(202).json({
-      signupComplete: true,
-      pendingApproval: true,
-      notificationStatus,
-      message: 'Signup submitted. Admin has been notified for approval.'
-    });
+  let notificationStatus = { emailed: false, reason: 'Email not attempted' };
+  try {
+    notificationStatus = await maybeSendSignupNotificationEmail(user);
+  } catch (err) {
+    notificationStatus = { emailed: false, reason: `Email failed: ${err.message}` };
   }
 
   setSessionCookie(res, user.id);
   return res.json({
     signupComplete: true,
     approved: true,
+    notificationStatus,
     user: userPublicShape(user)
   });
-});
-
-app.get('/api/admin/approve', (req, res) => {
-  const token = String(req.query.token || '');
-  if (!token) {
-    return res.status(400).send('<h1>Missing token</h1>');
-  }
-
-  const verified = verifyApprovalToken(token);
-  if (!verified.valid) {
-    return res.status(400).send(`<h1>Approval failed</h1><p>${verified.reason}</p>`);
-  }
-
-  const users = readJsonArray(USERS_PATH);
-  const user = users.find(
-    (u) => u.id === verified.payload.userId && u.email === verified.payload.email
-  );
-
-  if (!user) {
-    return res.status(404).send('<h1>User not found</h1>');
-  }
-
-  if (user.approved !== true) {
-    user.approved = true;
-    user.approvedAt = new Date().toISOString();
-    writeJsonArray(USERS_PATH, users);
-  }
-
-  return res.send(
-    '<h1>Account approved</h1><p>This user can now sign in with Google and access the merch page.</p>'
-  );
 });
 
 app.post('/api/auth/logout', (req, res) => {

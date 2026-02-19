@@ -140,14 +140,6 @@ async function setupAuthPage() {
         startMerchLoadingTransition();
         window.location.href = '/merch.html';
       } catch (err) {
-        if (err.data?.pendingApproval) {
-          setMessage(
-            messageEl,
-            'Account pending approval. You will be able to sign in after approval.',
-            'error'
-          );
-          return;
-        }
         setMessage(messageEl, err.message, 'error');
       }
     }
@@ -180,19 +172,10 @@ async function setupAuthPage() {
     setMessage(messageEl, 'Submitting signup...');
 
     try {
-      const data = await api('/api/auth/google/signup', {
+      await api('/api/auth/google/signup', {
         method: 'POST',
         body: JSON.stringify(payload)
       });
-
-      if (data.pendingApproval) {
-        setMessage(
-          messageEl,
-          'Signup received. Admin has been notified. You can sign in after approval.',
-          'success'
-        );
-        return;
-      }
 
       startMerchLoadingTransition();
       window.location.href = '/merch.html';

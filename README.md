@@ -3,7 +3,6 @@
 Simple website with:
 - Google sign-in
 - Required signup details for new users: first name, last name, initials
-- Admin approval required for new accounts
 - Signup notification email sent to admin when someone signs up
 - One merch page where signed-in users can choose an item, confirm Venmo agreement, and enter quantity
 - Orders automatically saved with signed-in user name/email
@@ -20,13 +19,12 @@ npm install
 Create a `.env` file from `.env.example` and set:
 
 - `PORT`: default `3000`
-- `PUBLIC_BASE_URL`: full URL of your app (used in approval email links)
 - `SESSION_SECRET`: long random secret
 - `DATA_DIR`: folder for persistent `users.json` and `orders.json` (default `./data`)
 - `COOKIE_SECURE`: use `true` in production HTTPS
 - `OWNER_EMAIL`: your email address
 - `GOOGLE_CLIENT_ID`: Google OAuth web client ID
-- SMTP vars: required for approval/order emails
+- SMTP vars: required for signup/order emails
 
 ## 3) Google setup
 
@@ -71,13 +69,12 @@ In Google Cloud Console for your OAuth client:
 3. If your OAuth consent screen is in **Testing**, add each allowed user under **Test users**.
 4. If you want everyone in your club to sign in, publish consent screen to **Production**.
 
-## Approval flow
+## Signup flow
 
 - New user signs in with Google.
 - New user must complete signup details: first name, last name, initials.
-- Account is then created as `approved: false`.
-- You get a signup notification email with an approval link.
-- After you click the link, that user can sign in and access merch.
+- Account is immediately active after signup.
+- Admin receives a signup notification email.
 
 ## How order info gets to you
 

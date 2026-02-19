@@ -1,0 +1,45 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>Club Merch Orders</title>
+    <link rel="stylesheet" href="/styles.css" />
+  </head>
+  <body>
+    <header class="topbar">
+      <div class="topbar-brand">
+        <img src="/moose.png" alt="Moose symbol" class="moose-logo" />
+        <img src="/logo.png" alt="Club logo" class="brand-wordmark" />
+      </div>
+      <div class="user-strip">
+        <a class="secondary-btn admin-link" href="/merch.html">Back to Merch</a>
+        <button id="exportCsvBtn" class="secondary-btn" type="button">Export CSV</button>
+      </div>
+    </header>
+
+    <main class="merch-main">
+      <div class="orders-table-wrap">
+        <table class="orders-table">
+          <thead>
+            <tr>
+              <th>Date</th>
+              <th>Name</th>
+              <th>Initials</th>
+              <th>Email</th>
+              <th>Item</th>
+              <th>Include Initials</th>
+              <th>Quantity</th>
+              <th>Venmo Agreed</th>
+            </tr>
+          </thead>
+          <tbody id="ordersTableBody"></tbody>
+        </table>
+      </div>
+
+      <p id="ordersMessage" class="message"></p>
+    </main>
+
+    <script src="/app.js"></script>
+  </body>
+</html>

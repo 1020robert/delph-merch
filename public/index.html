@@ -3,43 +3,44 @@
   <head>
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-    <title>Club Sign In</title>
+    <title>Club Merch</title>
     <link rel="stylesheet" href="/styles.css" />
+    <script src="https://accounts.google.com/gsi/client" async defer></script>
   </head>
   <body class="auth-body">
     <main class="auth-layout">
       <section class="brand-panel">
-        <h1>Your Club Merch</h1>
-        <p>Sign in to place merch orders. Orders automatically include your account name/email.</p>
+        <img src="/logo.png" alt="Club logo" class="brand-wordmark-auth" />
+        <img src="/moos.png" alt="Club symbol" class="brand-moose" />
       </section>
 
-      <section class="auth-panel">
-        <div class="tabs">
-          <button id="loginTab" class="tab-btn active" type="button">Sign In</button>
-          <button id="registerTab" class="tab-btn" type="button">Create Account</button>
-        </div>
+      <section class="auth-panel" id="googleAuthPanel">
+        <h2 class="auth-title">Sign In</h2>
+        <p class="auth-copy">Use your Google account to continue.</p>
+        <div id="googleSignInButton" class="google-btn-wrap"></div>
 
-        <form id="loginForm" class="form active" novalidate>
-          <label>Email
-            <input type="email" name="email" required />
+        <form id="signupForm" class="signup-form hidden" novalidate>
+          <p id="signupEmail" class="signup-email"></p>
+          <label>
+            First Name
+            <input type="text" name="firstName" maxlength="50" required />
           </label>
-          <label>Password
-            <input type="password" name="password" required minlength="8" />
+          <label>
+            Last Name
+            <input type="text" name="lastName" maxlength="50" required />
           </label>
-          <button type="submit" class="primary-btn">Sign In</button>
-        </form>
-
-        <form id="registerForm" class="form" novalidate>
-          <label>Full Name
-            <input type="text" name="name" required />
+          <label>
+            Initials
+            <input
+              type="text"
+              name="initials"
+              maxlength="5"
+              required
+              pattern="[A-Za-z]{1,5}"
+              placeholder="RJ"
+            />
           </label>
-          <label>Email
-            <input type="email" name="email" required />
-          </label>
-          <label>Password
-            <input type="password" name="password" required minlength="8" />
-          </label>
-          <button type="submit" class="primary-btn">Create Account</button>
+          <button type="submit" class="primary-btn">Complete Signup</button>
         </form>
 
         <p id="authMessage" class="message"></p>

@@ -6,27 +6,30 @@
     <title>Club Merch</title>
     <link rel="stylesheet" href="/styles.css" />
   </head>
-  <body>
-    <div id="loadingOverlay" class="loading-overlay hidden" aria-live="polite">
-      <img src="/club-symbol.svg" alt="Club symbol" class="loading-symbol" />
+  <body class="merch-body">
+    <div id="loadingOverlay" class="loading-overlay" aria-live="polite">
+      <img
+        src="/club-symbol.png"
+        alt="Club symbol"
+        class="loading-symbol"
+        onerror="this.onerror=null;this.src='/club-symbol.svg';"
+      />
     </div>
 
-    <header class="topbar">
-      <h1>Club Merch Store</h1>
-      <div class="user-strip">
-        <span id="userInfo"></span>
-        <button id="logoutBtn" class="secondary-btn" type="button">Sign Out</button>
+    <header class="topbar merch-topbar">
+      <img src="/moose-header.png?v=2" alt="Moose symbol (click to sign out)" class="moose-logo logout-moose merch-logout-moose" id="logoutMoose" title="Sign Out" />
+      <div class="topbar-brand merch-brand">
+        <img src="/logo.png" alt="Club logo" class="brand-wordmark merch-wordmark" />
+      </div>
+      <div class="user-strip merch-actions">
+        <a id="adminOrdersLink" class="secondary-btn hidden admin-link" href="/admin-orders.html">
+          View Orders
+        </a>
       </div>
     </header>
 
     <main class="merch-main">
-      <section class="intro-card">
-        <h2>Place an Order</h2>
-        <p>Click an item, check the Venmo agreement box, set quantity, and buy.</p>
-      </section>
-
       <section id="merchGrid" class="merch-grid"></section>
-      <p id="orderMessage" class="message"></p>
     </main>
 
     <script src="/app.js"></script>

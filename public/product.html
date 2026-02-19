@@ -1,0 +1,68 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>Product Details</title>
+    <link rel="stylesheet" href="/styles.css" />
+  </head>
+  <body class="merch-body product-body">
+    <header class="topbar merch-topbar">
+      <img
+        src="/moose-header.png?v=2"
+        alt="Moose symbol (click to sign out)"
+        class="moose-logo logout-moose merch-logout-moose"
+        id="logoutMoose"
+        title="Sign Out"
+      />
+      <div class="topbar-brand merch-brand">
+        <img src="/logo.png" alt="Club logo" class="brand-wordmark merch-wordmark" />
+      </div>
+      <div class="user-strip merch-actions">
+        <a class="secondary-btn admin-link" href="/merch.html">Back to Merch</a>
+        <a id="adminOrdersLink" class="secondary-btn hidden admin-link" href="/admin-orders.html">
+          View Orders
+        </a>
+      </div>
+    </header>
+
+    <main id="productDetailPage" class="product-main">
+      <section class="product-layout">
+        <div class="product-image-panel">
+          <div class="product-image-stage">
+            <img id="productImage" class="product-image" src="/glass.JPG" alt="Product image" />
+          </div>
+        </div>
+
+        <div class="product-info-panel">
+          <h1 id="productTitle" class="product-title">Item</h1>
+          <p id="productPrice" class="product-price">$0.00</p>
+
+          <div class="product-option-section">
+            <p class="product-option-label">Include initials</p>
+            <label class="initials-row" for="productIncludeInitials">
+              <input id="productIncludeInitials" type="checkbox" />
+              Yes, include initials on this item.
+            </label>
+          </div>
+
+          <div class="product-checkout">
+            <label>
+              Quantity
+              <input id="productQuantity" type="number" min="1" max="50" value="1" />
+            </label>
+            <label class="venmo-row">
+              <input id="productVenmo" type="checkbox" />
+              I agree to pay @Robert-Lichten by Venmo.
+            </label>
+            <button id="submitProductOrder" class="primary-btn" type="button">Order</button>
+          </div>
+
+          <p id="productOrderMessage" class="message"></p>
+        </div>
+      </section>
+    </main>
+
+    <script src="/app.js"></script>
+  </body>
+</html>

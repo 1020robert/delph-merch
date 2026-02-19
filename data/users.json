@@ -1,1 +1,15 @@
-[]
+[
+  {
+    "id": "632461d6-22ae-4125-be1b-7136430aa0d2",
+    "name": "RJ Lichten",
+    "email": "1020rjl@gmail.com",
+    "password": "99e3287cf6828328dfbde329e5eb78b0:a500c29ac6ba48e3f788611787ddef7c508e9020fa5c01870246062eb58702a8c02ddf45a13b1188eb27a9933cfc0dd442d5151478463296d652783965f45bd9",
+    "createdAt": "2026-02-19T17:00:07.537Z",
+    "provider": "google",
+    "approved": true,
+    "googleSub": "101809485223961901656",
+    "firstName": "RJ",
+    "lastName": "Lichten",
+    "initials": "RJML"
+  }
+]

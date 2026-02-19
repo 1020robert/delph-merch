@@ -302,6 +302,7 @@ async function setupProductPage() {
 
   orderButton.addEventListener('click', async () => {
     setMessage(messageEl, 'Submitting order...');
+    orderButton.disabled = true;
     try {
       const data = await api('/api/orders', {
         method: 'POST',
@@ -319,14 +320,18 @@ async function setupProductPage() {
 
       setMessage(
         messageEl,
-        `Order received for ${data.order.quantity} x ${item.name}. Include initials: ${data.order.includeInitials ? 'Yes' : 'No'}.${emailInfo}`,
+        `Order received for ${data.order.quantity} x ${item.name}. Include initials: ${data.order.includeInitials ? 'Yes' : 'No'}.${emailInfo} Returning to merch page...`,
         'success'
       );
       quantityInput.value = '1';
       venmoBox.checked = false;
       if (includeInitialsBox) includeInitialsBox.checked = false;
+      setTimeout(() => {
+        window.location.href = '/merch.html';
+      }, 1400);
     } catch (err) {
       setMessage(messageEl, err.message, 'error');
+      orderButton.disabled = false;
     }
   });
 }

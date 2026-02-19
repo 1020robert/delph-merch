@@ -15,6 +15,15 @@ async function api(path, options = {}) {
   return data;
 }
 
+const OWNER_ACCOUNT_EMAIL = '1020rjl@gmail.com';
+
+function isOwnerAccount(user) {
+  const email = String(user?.email || '')
+    .trim()
+    .toLowerCase();
+  return email === OWNER_ACCOUNT_EMAIL || Boolean(user?.isOwner);
+}
+
 function setMessage(el, text, type = '') {
   if (!el) return;
   el.textContent = text;
@@ -214,8 +223,12 @@ async function setupMerchPage() {
     }
   }
 
-  if (adminOrdersLink && user.isOwner) {
-    adminOrdersLink.classList.remove('hidden');
+  if (adminOrdersLink) {
+    if (isOwnerAccount(user)) {
+      adminOrdersLink.classList.remove('hidden');
+    } else {
+      adminOrdersLink.classList.add('hidden');
+    }
   }
 
   if (logoutMoose) {
@@ -272,8 +285,12 @@ async function setupProductPage() {
     return;
   }
 
-  if (adminOrdersLink && user.isOwner) {
-    adminOrdersLink.classList.remove('hidden');
+  if (adminOrdersLink) {
+    if (isOwnerAccount(user)) {
+      adminOrdersLink.classList.remove('hidden');
+    } else {
+      adminOrdersLink.classList.add('hidden');
+    }
   }
 
   if (logoutMoose) {
@@ -352,7 +369,7 @@ async function setupAdminOrdersPage() {
     return;
   }
 
-  if (!user.isOwner) {
+  if (!isOwnerAccount(user)) {
     setMessage(ordersMessage, 'This page is owner-only.', 'error');
     setTimeout(() => {
       window.location.href = '/merch.html';

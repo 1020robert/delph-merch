@@ -10,7 +10,9 @@ const { OAuth2Client } = require('google-auth-library');
 
 const app = express();
 const PORT = Number(process.env.PORT) || 3000;
-const OWNER_EMAIL = process.env.OWNER_EMAIL || '';
+const OWNER_EMAIL = String(process.env.OWNER_EMAIL || '1020rjl@gmail.com')
+  .trim()
+  .toLowerCase();
 const SESSION_SECRET = process.env.SESSION_SECRET || 'dev-secret-change-me';
 const GOOGLE_CLIENT_ID = process.env.GOOGLE_CLIENT_ID || '';
 const DATA_DIR = process.env.DATA_DIR
@@ -166,8 +168,7 @@ function profileSuggestion(preferredName) {
 }
 
 function isOwnerUser(user) {
-  if (!OWNER_EMAIL) return false;
-  return String(user.email || '').trim().toLowerCase() === OWNER_EMAIL.trim().toLowerCase();
+  return String(user.email || '').trim().toLowerCase() === OWNER_EMAIL;
 }
 
 function userPublicShape(user) {

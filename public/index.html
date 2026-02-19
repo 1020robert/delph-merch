@@ -1,0 +1,51 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>Club Sign In</title>
+    <link rel="stylesheet" href="/styles.css" />
+  </head>
+  <body class="auth-body">
+    <main class="auth-layout">
+      <section class="brand-panel">
+        <h1>Your Club Merch</h1>
+        <p>Sign in to place merch orders. Orders automatically include your account name/email.</p>
+      </section>
+
+      <section class="auth-panel">
+        <div class="tabs">
+          <button id="loginTab" class="tab-btn active" type="button">Sign In</button>
+          <button id="registerTab" class="tab-btn" type="button">Create Account</button>
+        </div>
+
+        <form id="loginForm" class="form active" novalidate>
+          <label>Email
+            <input type="email" name="email" required />
+          </label>
+          <label>Password
+            <input type="password" name="password" required minlength="8" />
+          </label>
+          <button type="submit" class="primary-btn">Sign In</button>
+        </form>
+
+        <form id="registerForm" class="form" novalidate>
+          <label>Full Name
+            <input type="text" name="name" required />
+          </label>
+          <label>Email
+            <input type="email" name="email" required />
+          </label>
+          <label>Password
+            <input type="password" name="password" required minlength="8" />
+          </label>
+          <button type="submit" class="primary-btn">Create Account</button>
+        </form>
+
+        <p id="authMessage" class="message"></p>
+      </section>
+    </main>
+
+    <script src="/app.js"></script>
+  </body>
+</html>

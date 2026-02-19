@@ -1,0 +1,30 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 512" role="img" aria-label="Club symbol">
+  <defs>
+    <linearGradient id="gold" x1="0%" y1="0%" x2="0%" y2="100%">
+      <stop offset="0%" stop-color="#f7d46a"/>
+      <stop offset="100%" stop-color="#b8891f"/>
+    </linearGradient>
+  </defs>
+  <rect width="512" height="512" fill="#efefef"/>
+  <circle cx="256" cy="256" r="190" fill="none" stroke="url(#gold)" stroke-width="10"/>
+
+  <g fill="none" stroke="url(#gold)" stroke-width="8" stroke-linecap="round">
+    <path d="M172 184c0-18 14-28 20-39 6 11 20 21 20 39 0 13-8 24-20 24s-20-11-20-24z"/>
+    <path d="M160 210h24v152h-24z"/>
+    <path d="M200 210h24v152h-24z"/>
+    <path d="M184 210l16 152"/>
+    <path d="M200 210l-16 152"/>
+
+    <path d="M236 162c0-20 16-30 22-44 7 14 22 24 22 44 0 15-9 27-22 27s-22-12-22-27z"/>
+    <path d="M224 192h26v182h-26z"/>
+    <path d="M266 192h26v182h-26z"/>
+    <path d="M250 192l16 182"/>
+    <path d="M266 192l-16 182"/>
+
+    <path d="M302 184c0-18 14-28 20-39 6 11 20 21 20 39 0 13-8 24-20 24s-20-11-20-24z"/>
+    <path d="M290 210h24v152h-24z"/>
+    <path d="M330 210h24v152h-24z"/>
+    <path d="M314 210l16 152"/>
+    <path d="M330 210l-16 152"/>
+  </g>
+</svg>

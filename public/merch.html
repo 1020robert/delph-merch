@@ -1,0 +1,34 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>Club Merch</title>
+    <link rel="stylesheet" href="/styles.css" />
+  </head>
+  <body>
+    <div id="loadingOverlay" class="loading-overlay hidden" aria-live="polite">
+      <img src="/club-symbol.svg" alt="Club symbol" class="loading-symbol" />
+    </div>
+
+    <header class="topbar">
+      <h1>Club Merch Store</h1>
+      <div class="user-strip">
+        <span id="userInfo"></span>
+        <button id="logoutBtn" class="secondary-btn" type="button">Sign Out</button>
+      </div>
+    </header>
+
+    <main class="merch-main">
+      <section class="intro-card">
+        <h2>Place an Order</h2>
+        <p>Click an item, check the Venmo agreement box, set quantity, and buy.</p>
+      </section>
+
+      <section id="merchGrid" class="merch-grid"></section>
+      <p id="orderMessage" class="message"></p>
+    </main>
+
+    <script src="/app.js"></script>
+  </body>
+</html>

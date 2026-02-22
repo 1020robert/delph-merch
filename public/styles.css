@@ -637,20 +637,23 @@ input {
     align-items: center;
     gap: 10px;
     height: auto;
-    min-height: 126px;
+    min-height: 152px;
     padding: calc(env(safe-area-inset-top, 0px) + 10px) 12px 10px;
   }
 
   .merch-body:not(.product-body) .merch-brand {
+    display: flex;
+    justify-content: center;
+    align-items: center;
     width: 100%;
     max-width: none;
     height: auto;
   }
 
   .merch-body:not(.product-body) .merch-wordmark {
-    width: 100%;
-    height: auto;
-    max-height: 76px;
+    width: min(100%, 520px);
+    height: clamp(88px, 22vw, 128px);
+    max-height: none;
     transform: none;
   }
 
@@ -704,7 +707,7 @@ input {
 @media (max-width: 520px) {
   .merch-body:not(.product-body) .merch-topbar {
     grid-template-columns: 60px 1fr auto;
-    min-height: 112px;
+    min-height: 136px;
     gap: 8px;
   }
 
@@ -714,7 +717,7 @@ input {
   }
 
   .merch-body:not(.product-body) .merch-wordmark {
-    max-height: 64px;
+    height: clamp(80px, 24vw, 112px);
   }
 
   .merch-body:not(.product-body) .merch-actions .secondary-btn {

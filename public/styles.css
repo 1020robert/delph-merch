@@ -626,4 +626,99 @@ input {
   .product-image-stage {
     min-height: 420px;
   }
+
+  .merch-body:not(.product-body) {
+    background-attachment: scroll;
+  }
+
+  .merch-body:not(.product-body) .merch-topbar {
+    display: grid;
+    grid-template-columns: 72px 1fr auto;
+    align-items: center;
+    gap: 10px;
+    height: auto;
+    min-height: 126px;
+    padding: calc(env(safe-area-inset-top, 0px) + 10px) 12px 10px;
+  }
+
+  .merch-body:not(.product-body) .merch-brand {
+    width: 100%;
+    max-width: none;
+    height: auto;
+  }
+
+  .merch-body:not(.product-body) .merch-wordmark {
+    width: 100%;
+    height: auto;
+    max-height: 76px;
+    transform: none;
+  }
+
+  .merch-body:not(.product-body) .merch-logout-moose {
+    position: static;
+    left: auto;
+    top: auto;
+    transform: none;
+    width: 68px;
+    height: 68px;
+    justify-self: start;
+    align-self: center;
+  }
+
+  .merch-body:not(.product-body) .merch-actions {
+    position: static;
+    right: auto;
+    top: auto;
+    transform: none;
+    justify-self: end;
+  }
+
+  .merch-body:not(.product-body) .merch-actions .secondary-btn {
+    padding: 8px 10px;
+    font-size: 0.9rem;
+    white-space: nowrap;
+  }
+
+  .merch-body:not(.product-body) .merch-main {
+    padding: 14px;
+  }
+
+  .merch-body:not(.product-body) .merch-grid,
+  .merch-body:not(.product-body) .merch-grid.single-item {
+    margin-top: 14px;
+    grid-template-columns: minmax(0, 1fr);
+    gap: 14px;
+  }
+
+  .merch-body:not(.product-body) .catalog-card {
+    border-radius: 16px;
+    padding: 14px;
+  }
+
+  .merch-body:not(.product-body) .catalog-photo-wrap {
+    border-radius: 18px;
+    padding: 8px;
+  }
+}
+
+@media (max-width: 520px) {
+  .merch-body:not(.product-body) .merch-topbar {
+    grid-template-columns: 60px 1fr auto;
+    min-height: 112px;
+    gap: 8px;
+  }
+
+  .merch-body:not(.product-body) .merch-logout-moose {
+    width: 56px;
+    height: 56px;
+  }
+
+  .merch-body:not(.product-body) .merch-wordmark {
+    max-height: 64px;
+  }
+
+  .merch-body:not(.product-body) .merch-actions .secondary-btn {
+    padding: 7px 9px;
+    font-size: 0.82rem;
+  }
 }

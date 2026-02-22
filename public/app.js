@@ -21,7 +21,7 @@ function isOwnerAccount(user) {
   const email = String(user?.email || '')
     .trim()
     .toLowerCase();
-  return email === OWNER_ACCOUNT_EMAIL || Boolean(user?.isOwner);
+  return email === OWNER_ACCOUNT_EMAIL;
 }
 
 function setMessage(el, text, type = '') {

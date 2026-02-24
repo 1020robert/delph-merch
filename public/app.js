@@ -124,28 +124,6 @@ async function setupAuthPage() {
   const signupForm = document.getElementById('signupForm');
   const signupEmailEl = document.getElementById('signupEmail');
 
-  let pendingSignupToken = '';
-
-  function showSignupForm(data) {
-    const firstNameInput = signupForm.elements.firstName;
-    const lastNameInput = signupForm.elements.lastName;
-    const initialsInput = signupForm.elements.initials;
-
-    signupEmailEl.textContent = `Google account: ${data.email}`;
-    firstNameInput.value = data.suggestedProfile?.firstName || '';
-    lastNameInput.value = data.suggestedProfile?.lastName || '';
-    initialsInput.value = data.suggestedProfile?.initials || '';
-    signupForm.classList.remove('hidden');
-  }
-
-  function hideSignupForm(resetFields = false) {
-    signupForm.classList.add('hidden');
-    if (resetFields) {
-      signupForm.reset();
-      signupEmailEl.textContent = '';
-    }
-  }
-
   try {
     await api('/api/auth/me');
     window.location.href = '/merch.html';
@@ -183,23 +161,19 @@ async function setupAuthPage() {
           body: JSON.stringify({ credential: response.credential })
         });
 
-        if (data.signupRequired) {
-          pendingSignupToken = data.signupToken;
-          showSignupForm(data);
-          setMessage(
-            messageEl,
-            `Complete your details and submit for approval by ${OWNER_ACCOUNT_EMAIL}.`,
-            'success'
-          );
-          return;
-        }
-
         startMerchLoadingTransition();
         window.location.href = '/merch.html';
       } catch (err) {
         if (err.status === 403 && err.data?.approvalRequired) {
-          pendingSignupToken = '';
-          hideSignupForm(true);
+          const pendingEmail = String(err.data?.email || '').trim();
+          if (pendingEmail && signupForm?.elements?.email) {
+            signupForm.elements.email.value = pendingEmail;
+          }
+          if (signupEmailEl) {
+            signupEmailEl.textContent = pendingEmail
+              ? `Requested email: ${pendingEmail}`
+              : 'This Google email is not approved yet.';
+          }
           setMessage(
             messageEl,
             err.message || `Your account is pending approval by ${OWNER_ACCOUNT_EMAIL}.`,
@@ -224,39 +198,48 @@ async function setupAuthPage() {
   signupForm.addEventListener('submit', async (event) => {
     event.preventDefault();
 
-    if (!pendingSignupToken) {
-      setMessage(messageEl, 'Start with Google sign-in first.', 'error');
-      return;
-    }
-
     const payload = {
-      signupToken: pendingSignupToken,
+      email: signupForm.elements.email.value,
       firstName: signupForm.elements.firstName.value,
       lastName: signupForm.elements.lastName.value,
       initials: signupForm.elements.initials.value
     };
 
-    setMessage(messageEl, 'Submitting application...');
+    setMessage(messageEl, `Submitting approval request to ${OWNER_ACCOUNT_EMAIL}...`);
 
     try {
-      const data = await api('/api/auth/google/signup', {
+      const data = await api('/api/auth/request-approval', {
         method: 'POST',
         body: JSON.stringify(payload)
       });
 
-      if (data.approvalRequired) {
-        pendingSignupToken = '';
-        hideSignupForm(true);
+      if (signupEmailEl) {
+        signupEmailEl.textContent = `Requested email: ${data.email || payload.email}`;
+      }
+
+      if (data.alreadyApproved) {
         setMessage(
           messageEl,
-          `Application submitted. ${OWNER_ACCOUNT_EMAIL} must approve your account before you can sign in.`,
+          'Email is already approved. Use Sign in with Google.',
           'success'
         );
         return;
       }
 
-      startMerchLoadingTransition();
-      window.location.href = '/merch.html';
+      if (data.alreadyPending) {
+        setMessage(
+          messageEl,
+          `Request re-sent. ${OWNER_ACCOUNT_EMAIL} still needs to approve this email.`,
+          'success'
+        );
+        return;
+      }
+
+      setMessage(
+        messageEl,
+        `Request sent. ${OWNER_ACCOUNT_EMAIL} must approve your email before sign-in works.`,
+        'success'
+      );
     } catch (err) {
       setMessage(messageEl, err.message, 'error');
     }

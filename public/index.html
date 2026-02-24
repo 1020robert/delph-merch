@@ -16,11 +16,15 @@
 
       <section class="auth-panel" id="googleAuthPanel">
         <h2 class="auth-title">Sign In</h2>
-        <p class="auth-copy">Use Google, then submit your application for owner approval.</p>
+        <p class="auth-copy">Only approved emails can sign in. Request approval below first.</p>
         <div id="googleSignInButton" class="google-btn-wrap"></div>
 
-        <form id="signupForm" class="signup-form hidden" novalidate>
-          <p id="signupEmail" class="signup-email"></p>
+        <form id="signupForm" class="signup-form" novalidate>
+          <p id="signupEmail" class="signup-email">Request email approval</p>
+          <label>
+            Email
+            <input type="email" name="email" maxlength="120" required placeholder="you@email.com" />
+          </label>
           <label>
             First Name
             <input type="text" name="firstName" maxlength="50" required />
@@ -47,6 +51,6 @@
       </section>
     </main>
 
-    <script src="/app.js?v=20260224e"></script>
+    <script src="/app.js?v=20260224f"></script>
   </body>
 </html>

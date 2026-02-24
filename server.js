@@ -27,8 +27,6 @@ const SESSION_COOKIE = 'club_session';
 const sessions = new Map();
 const ensuredDataFiles = new Set();
 
-const SIGNUP_TOKEN_TTL_MS = 1000 * 60 * 15;
-
 const MERCH_ITEM_TEMPLATE = {
   name: 'Engraved Glass',
   price: 8,
@@ -93,39 +91,6 @@ function signValue(raw) {
   return crypto.createHmac('sha256', SESSION_SECRET).update(raw).digest('hex');
 }
 
-function safeEqualStrings(a, b) {
-  const aBuf = Buffer.from(String(a), 'utf8');
-  const bBuf = Buffer.from(String(b), 'utf8');
-  if (aBuf.length !== bBuf.length) return false;
-  return crypto.timingSafeEqual(aBuf, bBuf);
-}
-
-function createSignedToken(payload) {
-  const encoded = Buffer.from(JSON.stringify(payload)).toString('base64url');
-  const signature = signValue(encoded);
-  return `${encoded}.${signature}`;
-}
-
-function verifySignedToken(token) {
-  const parts = String(token || '').split('.');
-  if (parts.length !== 2) {
-    return { valid: false, reason: 'Malformed token' };
-  }
-
-  const [encoded, signature] = parts;
-  const expectedSignature = signValue(encoded);
-  if (!safeEqualStrings(signature, expectedSignature)) {
-    return { valid: false, reason: 'Signature mismatch' };
-  }
-
-  try {
-    const payload = JSON.parse(Buffer.from(encoded, 'base64url').toString('utf8'));
-    return { valid: true, payload };
-  } catch {
-    return { valid: false, reason: 'Invalid token payload' };
-  }
-}
-
 function createSession(userId) {
   const raw = `${userId}:${Date.now()}:${crypto.randomBytes(24).toString('hex')}`;
   const signature = signValue(raw);
@@ -166,6 +131,16 @@ function buildInitials(firstName, lastName) {
 function normalizeInitials(initials) {
   const normalized = String(initials || '').trim().toUpperCase();
   if (!/^[A-Z]{1,5}$/.test(normalized)) {
+    return null;
+  }
+  return normalized;
+}
+
+function normalizeEmail(email) {
+  const normalized = String(email || '')
+    .trim()
+    .toLowerCase();
+  if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(normalized)) {
     return null;
   }
   return normalized;
@@ -263,36 +238,6 @@ function buildTransport() {
   });
 }
 
-function createSignupToken({ email, sub, name }) {
-  return createSignedToken({
-    type: 'signup',
-    email,
-    sub,
-    name,
-    iat: Date.now()
-  });
-}
-
-function verifySignupToken(token) {
-  const parsed = verifySignedToken(token);
-  if (!parsed.valid) return parsed;
-
-  const payload = parsed.payload;
-  if (payload.type !== 'signup') {
-    return { valid: false, reason: 'Wrong token type' };
-  }
-
-  if (!Number.isFinite(payload.iat) || Date.now() - payload.iat > SIGNUP_TOKEN_TTL_MS) {
-    return { valid: false, reason: 'Signup session expired. Start Google sign-in again.' };
-  }
-
-  if (!payload.email) {
-    return { valid: false, reason: 'Invalid signup payload' };
-  }
-
-  return { valid: true, payload };
-}
-
 async function maybeSendOrderEmail(order, user, item) {
   const transport = buildTransport();
   if (!transport) {
@@ -354,6 +299,67 @@ async function maybeSendSignupNotificationEmail(user) {
   return { emailed: true };
 }
 
+function createOrUpdateApprovalRequest({ email, firstName, lastName, initials, googleSub = null }) {
+  const users = readJsonArray(USERS_PATH);
+  const nowIso = new Date().toISOString();
+  let user = users.find(
+    (candidate) => String(candidate.email || '').trim().toLowerCase() === email
+  );
+
+  const normalizedFirstName = String(firstName || '').trim();
+  const normalizedLastName = String(lastName || '').trim();
+  const normalizedInitials =
+    normalizeInitials(initials) || normalizeInitials(buildInitials(firstName, lastName)) || 'DC';
+  const computedName = `${normalizedFirstName} ${normalizedLastName}`.trim();
+
+  let alreadyApproved = false;
+  let alreadyPending = false;
+
+  if (!user) {
+    user = {
+      id: crypto.randomUUID(),
+      email,
+      provider: 'google',
+      googleSub: googleSub || null,
+      firstName: normalizedFirstName,
+      lastName: normalizedLastName,
+      initials: normalizedInitials,
+      name: computedName || email,
+      approved: false,
+      approvedAt: null,
+      approvedBy: null,
+      approvalRequestedAt: nowIso,
+      createdAt: nowIso
+    };
+    users.push(user);
+  } else {
+    alreadyApproved = user.approved === true;
+    alreadyPending = user.approved === false;
+
+    user.provider = 'google';
+    user.googleSub = googleSub || user.googleSub || null;
+    user.firstName = normalizedFirstName;
+    user.lastName = normalizedLastName;
+    user.initials = normalizedInitials;
+    user.name = computedName || user.name || email;
+
+    if (alreadyApproved) {
+      user.approved = true;
+      user.approvedAt = user.approvedAt || nowIso;
+      user.approvedBy = user.approvedBy || OWNER_EMAIL;
+      user.approvalRequestedAt = user.approvalRequestedAt || null;
+    } else {
+      user.approved = false;
+      user.approvedAt = null;
+      user.approvedBy = null;
+      user.approvalRequestedAt = nowIso;
+    }
+  }
+
+  writeJsonArray(USERS_PATH, users);
+  return { user, alreadyApproved, alreadyPending };
+}
+
 app.get('/api/config', (_req, res) => {
   return res.json({
     googleClientId: GOOGLE_CLIENT_ID || null
@@ -382,7 +388,7 @@ app.post('/api/auth/google', async (req, res) => {
     return res.status(401).json({ error: 'Google token verification failed' });
   }
 
-  const email = String(payload?.email || '').trim().toLowerCase();
+  const email = normalizeEmail(payload?.email);
   const googleName = String(payload?.name || 'Club Member').trim();
   const emailVerified = Boolean(payload?.email_verified);
   const sub = String(payload?.sub || '').trim();
@@ -392,7 +398,7 @@ app.post('/api/auth/google', async (req, res) => {
   }
 
   const users = readJsonArray(USERS_PATH);
-  let user = users.find((u) => u.email === email);
+  let user = users.find((u) => String(u.email || '').trim().toLowerCase() === email);
 
   if (!user && email === OWNER_EMAIL) {
     const ownerProfile = profileSuggestion(googleName);
@@ -417,16 +423,19 @@ app.post('/api/auth/google', async (req, res) => {
   }
 
   if (!user) {
-    const signupToken = createSignupToken({ email, sub, name: googleName });
-    return res.json({
-      signupRequired: true,
-      signupToken,
+    return res.status(403).json({
+      error: `This email is not approved yet. Submit the approval request form and wait for ${OWNER_EMAIL}.`,
+      approvalRequired: true,
       email,
-      suggestedProfile: profileSuggestion(googleName)
+      pending: false
     });
   }
 
   let changed = false;
+  if (String(user.email || '').trim().toLowerCase() !== email) {
+    user.email = email;
+    changed = true;
+  }
   if (user.provider !== 'google') {
     user.provider = 'google';
     changed = true;
@@ -442,37 +451,40 @@ app.post('/api/auth/google', async (req, res) => {
   }
 
   if (!profileIsComplete(user)) {
-    if (changed) {
-      writeJsonArray(USERS_PATH, users);
-    }
+    const fallback = profileSuggestion(user.name || googleName);
+    const firstName = String(user.firstName || fallback.firstName || 'Club').trim() || 'Club';
+    const lastName = String(user.lastName || fallback.lastName || 'Member').trim() || 'Member';
+    const initials =
+      normalizeInitials(user.initials) || normalizeInitials(buildInitials(firstName, lastName)) || 'DC';
 
-    const fallbackName = user.name || googleName;
-    const signupToken = createSignupToken({ email, sub, name: fallbackName });
-    return res.json({
-      signupRequired: true,
-      signupToken,
-      email,
-      suggestedProfile: {
-        firstName: user.firstName || profileSuggestion(fallbackName).firstName,
-        lastName: user.lastName || profileSuggestion(fallbackName).lastName,
-        initials: user.initials || profileSuggestion(fallbackName).initials
-      }
-    });
+    user.firstName = firstName;
+    user.lastName = lastName;
+    user.initials = initials;
+    user.name = `${firstName} ${lastName}`.trim();
+    changed = true;
   }
 
-  if (!isOwnerUser(user) && user.approved === false) {
+  if (!isOwnerUser(user) && user.approved !== true) {
+    if (user.approved !== false) {
+      user.approved = false;
+      user.approvalRequestedAt = user.approvalRequestedAt || new Date().toISOString();
+      changed = true;
+    }
     if (changed) {
       writeJsonArray(USERS_PATH, users);
     }
     return res.status(403).json({
       error: `Your account is pending approval by ${OWNER_EMAIL}.`,
-      approvalRequired: true
+      approvalRequired: true,
+      email,
+      pending: true
     });
   }
 
-  if (!isOwnerUser(user) && typeof user.approved !== 'boolean') {
+  if (isOwnerUser(user) && user.approved !== true) {
     user.approved = true;
     user.approvedAt = user.approvedAt || new Date().toISOString();
+    user.approvedBy = user.approvedBy || OWNER_EMAIL;
     changed = true;
   }
 
@@ -484,78 +496,33 @@ app.post('/api/auth/google', async (req, res) => {
   return res.json({ approved: true, user: userPublicShape(user) });
 });
 
-app.post('/api/auth/google/signup', async (req, res) => {
-  const { signupToken, firstName, lastName, initials } = req.body || {};
+app.post('/api/auth/request-approval', async (req, res) => {
+  const normalizedEmail = normalizeEmail(req.body?.email);
+  const normalizedFirstName = String(req.body?.firstName || '').trim();
+  const normalizedLastName = String(req.body?.lastName || '').trim();
+  const normalizedInitials = normalizeInitials(req.body?.initials);
 
-  if (!signupToken || !firstName || !lastName || !initials) {
+  if (!normalizedEmail || !normalizedFirstName || !normalizedLastName || !normalizedInitials) {
     return res.status(400).json({
-      error: 'signupToken, firstName, lastName, and initials are required'
+      error: 'email, firstName, lastName, and initials are required'
     });
   }
 
-  const verified = verifySignupToken(signupToken);
-  if (!verified.valid) {
-    return res.status(400).json({ error: verified.reason || 'Invalid signup session' });
+  if (normalizedEmail === OWNER_EMAIL) {
+    return res.status(400).json({
+      error: `Owner email does not need approval. Sign in with Google as ${OWNER_EMAIL}.`
+    });
   }
 
-  const normalizedFirstName = String(firstName).trim();
-  const normalizedLastName = String(lastName).trim();
-  const normalizedInitials = normalizeInitials(initials);
-
-  if (!normalizedFirstName || !normalizedLastName) {
-    return res.status(400).json({ error: 'First and last name are required' });
-  }
-
-  if (!normalizedInitials) {
-    return res.status(400).json({ error: 'Initials must be 1-5 letters' });
-  }
-
-  const { email, sub } = verified.payload;
-  const users = readJsonArray(USERS_PATH);
-  let user = users.find((u) => u.email === email);
-  const ownerAccount = email === OWNER_EMAIL;
-
-  if (!user) {
-    user = {
-      id: crypto.randomUUID(),
-      email,
-      provider: 'google',
-      googleSub: sub || null,
-      approved: ownerAccount,
-      approvedAt: ownerAccount ? new Date().toISOString() : null,
-      approvedBy: ownerAccount ? OWNER_EMAIL : null,
-      approvalRequestedAt: ownerAccount ? null : new Date().toISOString(),
-      createdAt: new Date().toISOString()
-    };
-    users.push(user);
-  }
-
-  user.provider = 'google';
-  user.googleSub = sub || user.googleSub || null;
-  user.firstName = normalizedFirstName;
-  user.lastName = normalizedLastName;
-  user.initials = normalizedInitials;
-  user.name = `${normalizedFirstName} ${normalizedLastName}`.trim();
-  user.approvedBy = user.approvedBy || null;
-  user.approvalRequestedAt = user.approvalRequestedAt || null;
-
-  const approvalRequired = !ownerAccount && user.approved !== true;
-  if (approvalRequired) {
-    user.approved = false;
-    user.approvedAt = null;
-    user.approvedBy = null;
-    user.approvalRequestedAt = new Date().toISOString();
-  } else {
-    user.approved = true;
-    user.approvedAt = user.approvedAt || new Date().toISOString();
-    user.approvedBy = user.approvedBy || OWNER_EMAIL;
-    user.approvalRequestedAt = user.approvalRequestedAt || null;
-  }
-
-  writeJsonArray(USERS_PATH, users);
+  const { user, alreadyApproved, alreadyPending } = createOrUpdateApprovalRequest({
+    email: normalizedEmail,
+    firstName: normalizedFirstName,
+    lastName: normalizedLastName,
+    initials: normalizedInitials
+  });
 
   let notificationStatus = { emailed: false, reason: 'Email not attempted' };
-  if (approvalRequired) {
+  if (!alreadyApproved) {
     try {
       notificationStatus = await maybeSendSignupNotificationEmail(user);
     } catch (err) {
@@ -563,20 +530,13 @@ app.post('/api/auth/google/signup', async (req, res) => {
     }
   }
 
-  if (approvalRequired) {
-    return res.json({
-      signupComplete: true,
-      approvalRequired: true,
-      notificationStatus
-    });
-  }
-
-  setSessionCookie(res, user.id);
   return res.json({
-    signupComplete: true,
-    approved: true,
-    notificationStatus,
-    user: userPublicShape(user)
+    success: true,
+    approvalRequired: !alreadyApproved,
+    alreadyApproved,
+    alreadyPending,
+    email: user.email,
+    notificationStatus
   });
 });
 

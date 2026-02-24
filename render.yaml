@@ -2,7 +2,7 @@ services:
   - type: web
     name: delphic-club-merch
     env: node
-    buildCommand: npm install
+    buildCommand: npm ci
     startCommand: npm start
     healthCheckPath: /api/config
     autoDeploy: true

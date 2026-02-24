@@ -329,15 +329,19 @@ async function maybeSendSignupNotificationEmail(user) {
     return { emailed: false, reason: 'Email not configured' };
   }
 
-  const subject = `New signup: ${user.firstName} ${user.lastName}`;
+  const requestedAt = user.approvalRequestedAt || new Date().toISOString();
+  const subject = `Approval request: ${user.firstName} ${user.lastName}`;
   const body = [
-    'A new user signed up via Google.',
+    'A new user requested Delphic Club Merch access.',
     '',
     `First Name: ${user.firstName}`,
     `Last Name: ${user.lastName}`,
     `Initials: ${user.initials}`,
     `Email: ${user.email}`,
-    `Signed up at: ${new Date().toISOString()}`
+    `Requested At: ${requestedAt}`,
+    `User ID: ${user.id}`,
+    '',
+    'Approve this user from the owner account in the Pending Users tab on /admin-orders.html.'
   ].join('\n');
 
   await transport.sendMail({
@@ -388,7 +392,29 @@ app.post('/api/auth/google', async (req, res) => {
   }
 
   const users = readJsonArray(USERS_PATH);
-  const user = users.find((u) => u.email === email);
+  let user = users.find((u) => u.email === email);
+
+  if (!user && email === OWNER_EMAIL) {
+    const ownerProfile = profileSuggestion(googleName);
+    user = {
+      id: crypto.randomUUID(),
+      email,
+      provider: 'google',
+      googleSub: sub || null,
+      approved: true,
+      approvedAt: new Date().toISOString(),
+      firstName: ownerProfile.firstName || 'Owner',
+      lastName: ownerProfile.lastName || '',
+      initials: normalizeInitials(ownerProfile.initials) || 'O',
+      name:
+        `${ownerProfile.firstName || ''} ${ownerProfile.lastName || ''}`.trim() ||
+        googleName ||
+        'Owner',
+      createdAt: new Date().toISOString()
+    };
+    users.push(user);
+    writeJsonArray(USERS_PATH, users);
+  }
 
   if (!user) {
     const signupToken = createSignupToken({ email, sub, name: googleName });
@@ -409,12 +435,7 @@ app.post('/api/auth/google', async (req, res) => {
     user.googleSub = sub;
     changed = true;
   }
-  if (user.approved === false) {
-    user.approved = true;
-    user.approvedAt = user.approvedAt || new Date().toISOString();
-    changed = true;
-  }
-  if (typeof user.approved !== 'boolean') {
+  if (isOwnerUser(user) && user.approved !== true) {
     user.approved = true;
     user.approvedAt = user.approvedAt || new Date().toISOString();
     changed = true;
@@ -437,6 +458,22 @@ app.post('/api/auth/google', async (req, res) => {
         initials: user.initials || profileSuggestion(fallbackName).initials
       }
     });
+  }
+
+  if (!isOwnerUser(user) && user.approved === false) {
+    if (changed) {
+      writeJsonArray(USERS_PATH, users);
+    }
+    return res.status(403).json({
+      error: `Your account is pending approval by ${OWNER_EMAIL}.`,
+      approvalRequired: true
+    });
+  }
+
+  if (!isOwnerUser(user) && typeof user.approved !== 'boolean') {
+    user.approved = true;
+    user.approvedAt = user.approvedAt || new Date().toISOString();
+    changed = true;
   }
 
   if (changed) {
@@ -476,6 +513,7 @@ app.post('/api/auth/google/signup', async (req, res) => {
   const { email, sub } = verified.payload;
   const users = readJsonArray(USERS_PATH);
   let user = users.find((u) => u.email === email);
+  const ownerAccount = email === OWNER_EMAIL;
 
   if (!user) {
     user = {
@@ -483,16 +521,13 @@ app.post('/api/auth/google/signup', async (req, res) => {
       email,
       provider: 'google',
       googleSub: sub || null,
-      approved: true,
-      approvedAt: new Date().toISOString(),
+      approved: ownerAccount,
+      approvedAt: ownerAccount ? new Date().toISOString() : null,
+      approvedBy: ownerAccount ? OWNER_EMAIL : null,
+      approvalRequestedAt: ownerAccount ? null : new Date().toISOString(),
       createdAt: new Date().toISOString()
     };
     users.push(user);
-  }
-
-  if (user.approved !== true) {
-    user.approved = true;
-    user.approvedAt = user.approvedAt || new Date().toISOString();
   }
 
   user.provider = 'google';
@@ -501,14 +536,39 @@ app.post('/api/auth/google/signup', async (req, res) => {
   user.lastName = normalizedLastName;
   user.initials = normalizedInitials;
   user.name = `${normalizedFirstName} ${normalizedLastName}`.trim();
+  user.approvedBy = user.approvedBy || null;
+  user.approvalRequestedAt = user.approvalRequestedAt || null;
+
+  const approvalRequired = !ownerAccount && user.approved !== true;
+  if (approvalRequired) {
+    user.approved = false;
+    user.approvedAt = null;
+    user.approvedBy = null;
+    user.approvalRequestedAt = new Date().toISOString();
+  } else {
+    user.approved = true;
+    user.approvedAt = user.approvedAt || new Date().toISOString();
+    user.approvedBy = user.approvedBy || OWNER_EMAIL;
+    user.approvalRequestedAt = user.approvalRequestedAt || null;
+  }
 
   writeJsonArray(USERS_PATH, users);
 
   let notificationStatus = { emailed: false, reason: 'Email not attempted' };
-  try {
-    notificationStatus = await maybeSendSignupNotificationEmail(user);
-  } catch (err) {
-    notificationStatus = { emailed: false, reason: `Email failed: ${err.message}` };
+  if (approvalRequired) {
+    try {
+      notificationStatus = await maybeSendSignupNotificationEmail(user);
+    } catch (err) {
+      notificationStatus = { emailed: false, reason: `Email failed: ${err.message}` };
+    }
+  }
+
+  if (approvalRequired) {
+    return res.json({
+      signupComplete: true,
+      approvalRequired: true,
+      notificationStatus
+    });
   }
 
   setSessionCookie(res, user.id);
@@ -586,6 +646,64 @@ app.get('/api/orders', authRequired, ownerRequired, (_req, res) => {
     .sort((a, b) => String(b.createdAt).localeCompare(String(a.createdAt)));
 
   return res.json({ orders: enriched });
+});
+
+app.get('/api/admin/pending-users', authRequired, ownerRequired, (_req, res) => {
+  const users = readJsonArray(USERS_PATH);
+
+  const pendingUsers = users
+    .filter((user) => !isOwnerUser(user) && user.approved === false)
+    .map((user) => ({
+      id: user.id,
+      name: user.name || `${user.firstName || ''} ${user.lastName || ''}`.trim(),
+      firstName: user.firstName || '',
+      lastName: user.lastName || '',
+      initials: user.initials || '',
+      email: user.email || '',
+      approvalRequestedAt: user.approvalRequestedAt || user.createdAt || null,
+      createdAt: user.createdAt || null
+    }))
+    .sort((a, b) =>
+      String(b.approvalRequestedAt || b.createdAt).localeCompare(
+        String(a.approvalRequestedAt || a.createdAt)
+      )
+    );
+
+  return res.json({ pendingUsers });
+});
+
+app.post('/api/admin/users/:userId/approve', authRequired, ownerRequired, (req, res) => {
+  const userId = String(req.params.userId || '').trim();
+  if (!userId) {
+    return res.status(400).json({ error: 'userId is required' });
+  }
+
+  const users = readJsonArray(USERS_PATH);
+  const userIndex = users.findIndex((user) => user.id === userId);
+  if (userIndex < 0) {
+    return res.status(404).json({ error: 'User not found' });
+  }
+
+  const existing = users[userIndex];
+  if (isOwnerUser(existing)) {
+    return res.status(400).json({ error: 'Owner account does not require approval' });
+  }
+
+  const updatedUser = {
+    ...existing,
+    approved: true,
+    approvedAt: existing.approvedAt || new Date().toISOString(),
+    approvedBy: req.user.email,
+    approvalRequestedAt: existing.approvalRequestedAt || existing.createdAt || new Date().toISOString()
+  };
+
+  users[userIndex] = updatedUser;
+  writeJsonArray(USERS_PATH, users);
+
+  return res.json({
+    success: true,
+    user: userPublicShape(updatedUser)
+  });
 });
 
 app.post('/api/admin/orders/:orderId/fulfill', authRequired, ownerRequired, (req, res) => {

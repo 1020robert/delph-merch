@@ -138,6 +138,14 @@ async function setupAuthPage() {
     signupForm.classList.remove('hidden');
   }
 
+  function hideSignupForm(resetFields = false) {
+    signupForm.classList.add('hidden');
+    if (resetFields) {
+      signupForm.reset();
+      signupEmailEl.textContent = '';
+    }
+  }
+
   try {
     await api('/api/auth/me');
     window.location.href = '/merch.html';
@@ -180,7 +188,7 @@ async function setupAuthPage() {
           showSignupForm(data);
           setMessage(
             messageEl,
-            'Complete signup details (first name, last name, initials) to continue.',
+            `Complete your details and submit for approval by ${OWNER_ACCOUNT_EMAIL}.`,
             'success'
           );
           return;
@@ -189,6 +197,16 @@ async function setupAuthPage() {
         startMerchLoadingTransition();
         window.location.href = '/merch.html';
       } catch (err) {
+        if (err.status === 403 && err.data?.approvalRequired) {
+          pendingSignupToken = '';
+          hideSignupForm(true);
+          setMessage(
+            messageEl,
+            err.message || `Your account is pending approval by ${OWNER_ACCOUNT_EMAIL}.`,
+            'error'
+          );
+          return;
+        }
         setMessage(messageEl, err.message, 'error');
       }
     }
@@ -218,13 +236,24 @@ async function setupAuthPage() {
       initials: signupForm.elements.initials.value
     };
 
-    setMessage(messageEl, 'Submitting signup...');
+    setMessage(messageEl, 'Submitting application...');
 
     try {
-      await api('/api/auth/google/signup', {
+      const data = await api('/api/auth/google/signup', {
         method: 'POST',
         body: JSON.stringify(payload)
       });
+
+      if (data.approvalRequired) {
+        pendingSignupToken = '';
+        hideSignupForm(true);
+        setMessage(
+          messageEl,
+          `Application submitted. ${OWNER_ACCOUNT_EMAIL} must approve your account before you can sign in.`,
+          'success'
+        );
+        return;
+      }
 
       startMerchLoadingTransition();
       window.location.href = '/merch.html';
@@ -399,10 +428,13 @@ async function setupAdminOrdersPage() {
   if (!openOrdersTableBody) return;
 
   const fulfilledOrdersTableBody = document.getElementById('fulfilledOrdersTableBody');
+  const pendingUsersTableBody = document.getElementById('pendingUsersTableBody');
   const openOrdersPanel = document.getElementById('openOrdersPanel');
   const fulfilledOrdersPanel = document.getElementById('fulfilledOrdersPanel');
+  const pendingUsersPanel = document.getElementById('pendingUsersPanel');
   const openOrdersTabBtn = document.getElementById('openOrdersTabBtn');
   const fulfilledOrdersTabBtn = document.getElementById('fulfilledOrdersTabBtn');
+  const pendingUsersTabBtn = document.getElementById('pendingUsersTabBtn');
   const ordersMessage = document.getElementById('ordersMessage');
   const exportCsvBtn = document.getElementById('exportCsvBtn');
 
@@ -425,15 +457,20 @@ async function setupAdminOrdersPage() {
 
   let openOrders = [];
   let fulfilledOrders = [];
+  let pendingUsers = [];
   try {
-    const response = await api('/api/admin/orders');
-    const allOrders = Array.isArray(response.orders) ? response.orders : [];
-    openOrders = Array.isArray(response.openOrders)
-      ? response.openOrders
+    const [ordersResponse, pendingResponse] = await Promise.all([
+      api('/api/admin/orders'),
+      api('/api/admin/pending-users')
+    ]);
+    const allOrders = Array.isArray(ordersResponse.orders) ? ordersResponse.orders : [];
+    openOrders = Array.isArray(ordersResponse.openOrders)
+      ? ordersResponse.openOrders
       : allOrders.filter((order) => !order.fulfilled);
-    fulfilledOrders = Array.isArray(response.fulfilledOrders)
-      ? response.fulfilledOrders
+    fulfilledOrders = Array.isArray(ordersResponse.fulfilledOrders)
+      ? ordersResponse.fulfilledOrders
       : allOrders.filter((order) => order.fulfilled);
+    pendingUsers = Array.isArray(pendingResponse.pendingUsers) ? pendingResponse.pendingUsers : [];
   } catch (err) {
     setMessage(ordersMessage, err.message, 'error');
     return;
@@ -442,20 +479,28 @@ async function setupAdminOrdersPage() {
   const byCreatedAtDesc = (a, b) => String(b.createdAt).localeCompare(String(a.createdAt));
   const byFulfilledAtDesc = (a, b) =>
     String(b.fulfilledAt || b.createdAt).localeCompare(String(a.fulfilledAt || a.createdAt));
+  const byApprovalRequestedAtDesc = (a, b) =>
+    String(b.approvalRequestedAt || b.createdAt).localeCompare(
+      String(a.approvalRequestedAt || a.createdAt)
+    );
 
   openOrders.sort(byCreatedAtDesc);
   fulfilledOrders.sort(byFulfilledAtDesc);
+  pendingUsers.sort(byApprovalRequestedAtDesc);
 
   let activeTab = 'open';
 
   function setActiveTab(tab) {
-    activeTab = tab === 'fulfilled' ? 'fulfilled' : 'open';
+    activeTab = ['open', 'fulfilled', 'pending'].includes(tab) ? tab : 'open';
 
     if (openOrdersPanel) {
       openOrdersPanel.classList.toggle('hidden', activeTab !== 'open');
     }
     if (fulfilledOrdersPanel) {
       fulfilledOrdersPanel.classList.toggle('hidden', activeTab !== 'fulfilled');
+    }
+    if (pendingUsersPanel) {
+      pendingUsersPanel.classList.toggle('hidden', activeTab !== 'pending');
     }
 
     if (openOrdersTabBtn) {
@@ -464,16 +509,19 @@ async function setupAdminOrdersPage() {
     if (fulfilledOrdersTabBtn) {
       fulfilledOrdersTabBtn.classList.toggle('active', activeTab === 'fulfilled');
     }
+    if (pendingUsersTabBtn) {
+      pendingUsersTabBtn.classList.toggle('active', activeTab === 'pending');
+    }
   }
 
   function updateSummaryMessage() {
-    if (openOrders.length === 0 && fulfilledOrders.length === 0) {
-      setMessage(ordersMessage, 'No orders yet.');
+    if (openOrders.length === 0 && fulfilledOrders.length === 0 && pendingUsers.length === 0) {
+      setMessage(ordersMessage, 'No orders or pending applicants yet.');
       return;
     }
     setMessage(
       ordersMessage,
-      `${openOrders.length} open order(s), ${fulfilledOrders.length} fulfilled order(s).`,
+      `${openOrders.length} open order(s), ${fulfilledOrders.length} fulfilled order(s), ${pendingUsers.length} pending applicant(s).`,
       'success'
     );
   }
@@ -545,6 +593,63 @@ async function setupAdminOrdersPage() {
     });
   }
 
+  function renderPendingUsersTable() {
+    if (!pendingUsersTableBody) return;
+    pendingUsersTableBody.innerHTML = '';
+
+    if (pendingUsers.length === 0) {
+      const emptyRow = document.createElement('tr');
+      emptyRow.innerHTML =
+        '<td class="order-empty-cell" colspan="6">No pending applicants.</td>';
+      pendingUsersTableBody.appendChild(emptyRow);
+      return;
+    }
+
+    pendingUsers.forEach((userEntry) => {
+      const row = document.createElement('tr');
+      const requestedAt = userEntry.approvalRequestedAt
+        ? new Date(userEntry.approvalRequestedAt).toLocaleString()
+        : '';
+      row.innerHTML = `
+        <td>${escapeHtml(requestedAt)}</td>
+        <td>${escapeHtml(userEntry.name || '')}</td>
+        <td>${escapeHtml(userEntry.initials || '')}</td>
+        <td>${escapeHtml(userEntry.email || '')}</td>
+        <td>${escapeHtml(userEntry.id || '')}</td>
+        <td>
+          <button class="order-action-btn approve-user-btn" type="button" data-user-id="${escapeHtml(
+            userEntry.id || ''
+          )}">
+            Approve
+          </button>
+        </td>
+      `;
+      pendingUsersTableBody.appendChild(row);
+    });
+
+    pendingUsersTableBody.querySelectorAll('.approve-user-btn').forEach((button) => {
+      button.addEventListener('click', async () => {
+        const userId = button.dataset.userId;
+        if (!userId) return;
+
+        button.disabled = true;
+        button.textContent = 'Approving...';
+
+        try {
+          await api(`/api/admin/users/${encodeURIComponent(userId)}/approve`, { method: 'POST' });
+          pendingUsers = pendingUsers.filter((userEntry) => userEntry.id !== userId);
+          renderPendingUsersTable();
+          updateSummaryMessage();
+          setMessage(ordersMessage, 'User approved successfully.', 'success');
+        } catch (err) {
+          button.disabled = false;
+          button.textContent = 'Approve';
+          setMessage(ordersMessage, err.message, 'error');
+        }
+      });
+    });
+  }
+
   function renderFulfilledOrdersTable() {
     fulfilledOrdersTableBody.innerHTML = '';
 
@@ -580,58 +685,115 @@ async function setupAdminOrdersPage() {
   if (fulfilledOrdersTabBtn) {
     fulfilledOrdersTabBtn.addEventListener('click', () => setActiveTab('fulfilled'));
   }
+  if (pendingUsersTabBtn) {
+    pendingUsersTabBtn.addEventListener('click', () => setActiveTab('pending'));
+  }
 
-  exportCsvBtn.addEventListener('click', () => {
-    if (activeTab === 'open') {
-      const rows = openOrders.map((order) => [
-        order.createdAt || '',
-        order.userName || '',
-        order.userInitials || '',
-        order.userEmail || '',
-        order.itemName || '',
-        order.includeInitials ? 'Yes' : 'No',
-        order.quantity || '',
-        order.venmoAgreed ? 'Yes' : 'No',
-        order.itemId || '',
-        order.userId || '',
-        order.id || ''
+  if (exportCsvBtn) {
+    exportCsvBtn.addEventListener('click', () => {
+      if (activeTab === 'open') {
+        const rows = openOrders.map((order) => [
+          order.createdAt || '',
+          order.userName || '',
+          order.userInitials || '',
+          order.userEmail || '',
+          order.itemName || '',
+          order.includeInitials ? 'Yes' : 'No',
+          order.quantity || '',
+          order.venmoAgreed ? 'Yes' : 'No',
+          order.itemId || '',
+          order.userId || '',
+          order.id || ''
+        ]);
+
+        downloadCsv(
+          'delphic-club-merch-open-orders.csv',
+          [
+            'createdAt',
+            'userName',
+            'userInitials',
+            'userEmail',
+            'itemName',
+            'includeInitials',
+            'quantity',
+            'venmoAgreed',
+            'itemId',
+            'userId',
+            'orderId'
+          ],
+          rows
+        );
+        return;
+      }
+
+      if (activeTab === 'fulfilled') {
+        const rows = fulfilledOrders.map((order) => [
+          order.fulfilledAt || '',
+          order.createdAt || '',
+          order.userName || '',
+          order.userInitials || '',
+          order.userEmail || '',
+          order.itemName || '',
+          order.includeInitials ? 'Yes' : 'No',
+          order.quantity || '',
+          order.venmoAgreed ? 'Yes' : 'No',
+          order.fulfilledBy || '',
+          order.itemId || '',
+          order.userId || '',
+          order.id || ''
+        ]);
+
+        downloadCsv(
+          'delphic-club-merch-fulfilled-orders.csv',
+          [
+            'fulfilledAt',
+            'createdAt',
+            'userName',
+            'userInitials',
+            'userEmail',
+            'itemName',
+            'includeInitials',
+            'quantity',
+            'venmoAgreed',
+            'fulfilledBy',
+            'itemId',
+            'userId',
+            'orderId'
+          ],
+          rows
+        );
+        return;
+      }
+
+      const rows = pendingUsers.map((userEntry) => [
+        userEntry.approvalRequestedAt || '',
+        userEntry.name || '',
+        userEntry.initials || '',
+        userEntry.email || '',
+        userEntry.id || ''
       ]);
 
       downloadCsv(
-        'delphic-club-merch-open-orders.csv',
-        ['createdAt', 'userName', 'userInitials', 'userEmail', 'itemName', 'includeInitials', 'quantity', 'venmoAgreed', 'itemId', 'userId', 'orderId'],
+        'delphic-club-merch-pending-users.csv',
+        ['approvalRequestedAt', 'name', 'initials', 'email', 'userId'],
         rows
       );
-      return;
-    }
-
-    const rows = fulfilledOrders.map((order) => [
-      order.fulfilledAt || '',
-      order.createdAt || '',
-      order.userName || '',
-      order.userInitials || '',
-      order.userEmail || '',
-      order.itemName || '',
-      order.includeInitials ? 'Yes' : 'No',
-      order.quantity || '',
-      order.venmoAgreed ? 'Yes' : 'No',
-      order.fulfilledBy || '',
-      order.itemId || '',
-      order.userId || '',
-      order.id || ''
-    ]);
-
-    downloadCsv(
-      'delphic-club-merch-fulfilled-orders.csv',
-      ['fulfilledAt', 'createdAt', 'userName', 'userInitials', 'userEmail', 'itemName', 'includeInitials', 'quantity', 'venmoAgreed', 'fulfilledBy', 'itemId', 'userId', 'orderId'],
-      rows
-    );
-  });
+    });
+  }
 
   renderOpenOrdersTable();
   renderFulfilledOrdersTable();
+  renderPendingUsersTable();
   updateSummaryMessage();
-  setActiveTab(openOrders.length > 0 || fulfilledOrders.length === 0 ? 'open' : 'fulfilled');
+  setActiveTab(
+    openOrders.length > 0
+      ? 'open'
+      : pendingUsers.length > 0
+        ? 'pending'
+        : fulfilledOrders.length > 0
+          ? 'fulfilled'
+          : 'open'
+  );
 }
 
 setupAuthPage();

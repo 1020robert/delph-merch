@@ -4,7 +4,7 @@
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
     <title>Club Merch Orders</title>
-    <link rel="stylesheet" href="/styles.css?v=20260224b" />
+    <link rel="stylesheet" href="/styles.css?v=20260224c" />
   </head>
   <body>
     <header class="topbar">
@@ -26,6 +26,9 @@
           </button>
           <button id="fulfilledOrdersTabBtn" class="orders-tab" type="button" role="tab">
             Fulfilled History
+          </button>
+          <button id="pendingUsersTabBtn" class="orders-tab" type="button" role="tab">
+            Pending Users
           </button>
         </div>
       </div>
@@ -72,9 +75,27 @@
         </div>
       </section>
 
+      <section id="pendingUsersPanel" class="orders-table-panel hidden">
+        <div class="orders-table-wrap">
+          <table class="orders-table">
+            <thead>
+              <tr>
+                <th>Requested Date</th>
+                <th>Name</th>
+                <th>Initials</th>
+                <th>Email</th>
+                <th>User ID</th>
+                <th>Action</th>
+              </tr>
+            </thead>
+            <tbody id="pendingUsersTableBody"></tbody>
+          </table>
+        </div>
+      </section>
+
       <p id="ordersMessage" class="message"></p>
     </main>
 
-    <script src="/app.js?v=20260224a"></script>
+    <script src="/app.js?v=20260224e"></script>
   </body>
 </html>

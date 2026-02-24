@@ -567,6 +567,27 @@ app.get('/api/admin/orders', authRequired, ownerRequired, (_req, res) => {
   return res.json({ openOrders, fulfilledOrders });
 });
 
+app.get('/api/orders', authRequired, ownerRequired, (_req, res) => {
+  const orders = readJsonArray(ORDERS_PATH);
+  const users = readJsonArray(USERS_PATH);
+  const usersById = new Map(users.map((user) => [user.id, user]));
+
+  const enriched = orders
+    .map((order) => {
+      const user = usersById.get(order.userId);
+      return {
+        ...order,
+        userInitials: order.userInitials || user?.initials || '',
+        fulfilled: Boolean(order.fulfilled),
+        fulfilledAt: order.fulfilledAt || null,
+        fulfilledBy: order.fulfilledBy || null
+      };
+    })
+    .sort((a, b) => String(b.createdAt).localeCompare(String(a.createdAt)));
+
+  return res.json({ orders: enriched });
+});
+
 app.post('/api/admin/orders/:orderId/fulfill', authRequired, ownerRequired, (req, res) => {
   const orderId = String(req.params.orderId || '').trim();
   if (!orderId) {

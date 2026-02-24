@@ -631,7 +631,7 @@ async function setupAdminOrdersPage() {
   renderOpenOrdersTable();
   renderFulfilledOrdersTable();
   updateSummaryMessage();
-  setActiveTab('open');
+  setActiveTab(openOrders.length > 0 || fulfilledOrders.length === 0 ? 'open' : 'fulfilled');
 }
 
 setupAuthPage();

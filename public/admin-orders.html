@@ -19,23 +19,58 @@
     </header>
 
     <main class="merch-main">
-      <div class="orders-table-wrap">
-        <table class="orders-table">
-          <thead>
-            <tr>
-              <th>Date</th>
-              <th>Name</th>
-              <th>Initials</th>
-              <th>Email</th>
-              <th>Item</th>
-              <th>Include Initials</th>
-              <th>Quantity</th>
-              <th>Venmo Agreed</th>
-            </tr>
-          </thead>
-          <tbody id="ordersTableBody"></tbody>
-        </table>
+      <div class="orders-toolbar">
+        <div class="orders-tabs" role="tablist" aria-label="Order tabs">
+          <button id="openOrdersTabBtn" class="orders-tab active" type="button" role="tab">
+            Open Orders
+          </button>
+          <button id="fulfilledOrdersTabBtn" class="orders-tab" type="button" role="tab">
+            Fulfilled History
+          </button>
+        </div>
       </div>
+
+      <section id="openOrdersPanel" class="orders-table-panel">
+        <div class="orders-table-wrap">
+          <table class="orders-table">
+            <thead>
+              <tr>
+                <th>Date</th>
+                <th>Name</th>
+                <th>Initials</th>
+                <th>Email</th>
+                <th>Item</th>
+                <th>Include Initials</th>
+                <th>Quantity</th>
+                <th>Venmo Agreed</th>
+                <th>Action</th>
+              </tr>
+            </thead>
+            <tbody id="openOrdersTableBody"></tbody>
+          </table>
+        </div>
+      </section>
+
+      <section id="fulfilledOrdersPanel" class="orders-table-panel hidden">
+        <div class="orders-table-wrap">
+          <table class="orders-table">
+            <thead>
+              <tr>
+                <th>Fulfilled Date</th>
+                <th>Ordered Date</th>
+                <th>Name</th>
+                <th>Initials</th>
+                <th>Email</th>
+                <th>Item</th>
+                <th>Include Initials</th>
+                <th>Quantity</th>
+                <th>Venmo Agreed</th>
+              </tr>
+            </thead>
+            <tbody id="fulfilledOrdersTableBody"></tbody>
+          </table>
+        </div>
+      </section>
 
       <p id="ordersMessage" class="message"></p>
     </main>

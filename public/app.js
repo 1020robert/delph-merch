@@ -16,12 +16,43 @@ async function api(path, options = {}) {
 }
 
 const OWNER_ACCOUNT_EMAIL = '1020rjl@gmail.com';
+const MERCH_CACHE_KEY = 'merchItemsCacheV1';
 
 function isOwnerAccount(user) {
   const email = String(user?.email || '')
     .trim()
     .toLowerCase();
   return email === OWNER_ACCOUNT_EMAIL;
+}
+
+function readCachedMerchItems() {
+  try {
+    const raw = sessionStorage.getItem(MERCH_CACHE_KEY);
+    if (!raw) return null;
+    const parsed = JSON.parse(raw);
+    if (!Array.isArray(parsed)) return null;
+    return parsed;
+  } catch {
+    return null;
+  }
+}
+
+function writeCachedMerchItems(items) {
+  try {
+    sessionStorage.setItem(MERCH_CACHE_KEY, JSON.stringify(items));
+  } catch {
+    // Ignore storage write errors (private mode/quota/etc.)
+  }
+}
+
+async function getMerchItems() {
+  const cachedItems = readCachedMerchItems();
+  if (cachedItems) return cachedItems;
+
+  const merch = await api('/api/merch');
+  const items = Array.isArray(merch.items) ? merch.items : [];
+  writeCachedMerchItems(items);
+  return items;
 }
 
 function setMessage(el, text, type = '') {
@@ -58,6 +89,15 @@ function csvEscape(value) {
     return `"${stringValue.replace(/"/g, '""')}"`;
   }
   return stringValue;
+}
+
+function escapeHtml(value) {
+  return String(value ?? '')
+    .replace(/&/g, '&amp;')
+    .replace(/</g, '&lt;')
+    .replace(/>/g, '&gt;')
+    .replace(/"/g, '&quot;')
+    .replace(/'/g, '&#39;');
 }
 
 function downloadCsv(filename, headers, rows) {
@@ -238,19 +278,19 @@ async function setupMerchPage() {
     });
   }
 
-  const merch = await api('/api/merch');
-  if ((merch.items || []).length === 1) {
+  const items = await getMerchItems();
+  if (items.length === 1) {
     merchGrid.classList.add('single-item');
   }
 
-  merch.items.forEach((item) => {
+  items.forEach((item) => {
     const card = document.createElement('article');
     card.className = 'catalog-card';
 
     card.innerHTML = `
       <a class="catalog-link" href="/product.html?item=${encodeURIComponent(item.id)}">
         <div class="item-photo-wrap catalog-photo-wrap">
-          <img src="${item.image || '/glass.JPG'}" alt="${item.name}" class="item-photo catalog-photo" />
+          <img src="${item.image || '/glass.JPG'}" alt="${item.name}" class="item-photo catalog-photo" loading="lazy" decoding="async" fetchpriority="low" />
         </div>
         <h3 class="item-name catalog-name">${item.name}</h3>
         <p class="catalog-price">${formatCurrency(item.price)}</p>
@@ -300,12 +340,12 @@ async function setupProductPage() {
     });
   }
 
-  const merch = await api('/api/merch');
+  const items = await getMerchItems();
   const itemIdFromUrl = new URLSearchParams(window.location.search).get('item');
   const item =
-    merch.items.find((candidate) => candidate.id === itemIdFromUrl) ||
-    merch.items.find((candidate) => candidate.id === 'glass') ||
-    merch.items[0];
+    items.find((candidate) => candidate.id === itemIdFromUrl) ||
+    items.find((candidate) => candidate.id === 'glass') ||
+    items[0];
 
   if (!item) {
     setMessage(messageEl, 'Product not found.', 'error');
@@ -316,6 +356,7 @@ async function setupProductPage() {
   productPrice.textContent = formatCurrency(item.price);
   productImage.src = item.image || '/glass.JPG';
   productImage.alt = item.name;
+  productImage.decoding = 'async';
 
   orderButton.addEventListener('click', async () => {
     setMessage(messageEl, 'Submitting order...');
@@ -354,9 +395,14 @@ async function setupProductPage() {
 }
 
 async function setupAdminOrdersPage() {
-  const ordersTableBody = document.getElementById('ordersTableBody');
-  if (!ordersTableBody) return;
+  const openOrdersTableBody = document.getElementById('openOrdersTableBody');
+  if (!openOrdersTableBody) return;
 
+  const fulfilledOrdersTableBody = document.getElementById('fulfilledOrdersTableBody');
+  const openOrdersPanel = document.getElementById('openOrdersPanel');
+  const fulfilledOrdersPanel = document.getElementById('fulfilledOrdersPanel');
+  const openOrdersTabBtn = document.getElementById('openOrdersTabBtn');
+  const fulfilledOrdersTabBtn = document.getElementById('fulfilledOrdersTabBtn');
   const ordersMessage = document.getElementById('ordersMessage');
   const exportCsvBtn = document.getElementById('exportCsvBtn');
 
@@ -377,39 +423,190 @@ async function setupAdminOrdersPage() {
     return;
   }
 
-  let orders = [];
+  let openOrders = [];
+  let fulfilledOrders = [];
   try {
     const response = await api('/api/admin/orders');
-    orders = response.orders || [];
+    const allOrders = Array.isArray(response.orders) ? response.orders : [];
+    openOrders = Array.isArray(response.openOrders)
+      ? response.openOrders
+      : allOrders.filter((order) => !order.fulfilled);
+    fulfilledOrders = Array.isArray(response.fulfilledOrders)
+      ? response.fulfilledOrders
+      : allOrders.filter((order) => order.fulfilled);
   } catch (err) {
     setMessage(ordersMessage, err.message, 'error');
     return;
   }
 
-  if (orders.length === 0) {
-    setMessage(ordersMessage, 'No orders yet.');
-  } else {
-    setMessage(ordersMessage, `${orders.length} order(s) loaded.`, 'success');
+  const byCreatedAtDesc = (a, b) => String(b.createdAt).localeCompare(String(a.createdAt));
+  const byFulfilledAtDesc = (a, b) =>
+    String(b.fulfilledAt || b.createdAt).localeCompare(String(a.fulfilledAt || a.createdAt));
+
+  openOrders.sort(byCreatedAtDesc);
+  fulfilledOrders.sort(byFulfilledAtDesc);
+
+  let activeTab = 'open';
+
+  function setActiveTab(tab) {
+    activeTab = tab === 'fulfilled' ? 'fulfilled' : 'open';
+
+    if (openOrdersPanel) {
+      openOrdersPanel.classList.toggle('hidden', activeTab !== 'open');
+    }
+    if (fulfilledOrdersPanel) {
+      fulfilledOrdersPanel.classList.toggle('hidden', activeTab !== 'fulfilled');
+    }
+
+    if (openOrdersTabBtn) {
+      openOrdersTabBtn.classList.toggle('active', activeTab === 'open');
+    }
+    if (fulfilledOrdersTabBtn) {
+      fulfilledOrdersTabBtn.classList.toggle('active', activeTab === 'fulfilled');
+    }
   }
 
-  orders.forEach((order) => {
-    const row = document.createElement('tr');
-    const orderedAt = order.createdAt ? new Date(order.createdAt).toLocaleString() : '';
-    row.innerHTML = `
-      <td>${orderedAt}</td>
-      <td>${order.userName || ''}</td>
-      <td>${order.userInitials || ''}</td>
-      <td>${order.userEmail || ''}</td>
-      <td>${order.itemName || ''}</td>
-      <td>${order.includeInitials ? 'Yes' : 'No'}</td>
-      <td>${order.quantity || ''}</td>
-      <td>${order.venmoAgreed ? 'Yes' : 'No'}</td>
-    `;
-    ordersTableBody.appendChild(row);
-  });
+  function updateSummaryMessage() {
+    if (openOrders.length === 0 && fulfilledOrders.length === 0) {
+      setMessage(ordersMessage, 'No orders yet.');
+      return;
+    }
+    setMessage(
+      ordersMessage,
+      `${openOrders.length} open order(s), ${fulfilledOrders.length} fulfilled order(s).`,
+      'success'
+    );
+  }
+
+  function renderOpenOrdersTable() {
+    openOrdersTableBody.innerHTML = '';
+
+    if (openOrders.length === 0) {
+      const emptyRow = document.createElement('tr');
+      emptyRow.innerHTML = '<td class="order-empty-cell" colspan="9">No open orders.</td>';
+      openOrdersTableBody.appendChild(emptyRow);
+      return;
+    }
+
+    openOrders.forEach((order) => {
+      const row = document.createElement('tr');
+      const orderedAt = order.createdAt ? new Date(order.createdAt).toLocaleString() : '';
+      row.innerHTML = `
+        <td>${escapeHtml(orderedAt)}</td>
+        <td>${escapeHtml(order.userName || '')}</td>
+        <td>${escapeHtml(order.userInitials || '')}</td>
+        <td>${escapeHtml(order.userEmail || '')}</td>
+        <td>${escapeHtml(order.itemName || '')}</td>
+        <td>${order.includeInitials ? 'Yes' : 'No'}</td>
+        <td>${escapeHtml(order.quantity || '')}</td>
+        <td>${order.venmoAgreed ? 'Yes' : 'No'}</td>
+        <td>
+          <button class="order-action-btn" type="button" data-order-id="${escapeHtml(order.id || '')}">
+            Mark Fulfilled
+          </button>
+        </td>
+      `;
+      openOrdersTableBody.appendChild(row);
+    });
+
+    openOrdersTableBody.querySelectorAll('.order-action-btn').forEach((button) => {
+      button.addEventListener('click', async () => {
+        const orderId = button.dataset.orderId;
+        if (!orderId) return;
+
+        button.disabled = true;
+        button.textContent = 'Saving...';
+
+        try {
+          const response = await api(`/api/admin/orders/${encodeURIComponent(orderId)}/fulfill`, {
+            method: 'POST'
+          });
+          const updatedOrder = response.order || {};
+          const movedIndex = openOrders.findIndex((order) => order.id === orderId);
+          if (movedIndex >= 0) {
+            openOrders.splice(movedIndex, 1);
+          }
+          fulfilledOrders.unshift({
+            ...updatedOrder,
+            fulfilled: true
+          });
+          fulfilledOrders.sort(byFulfilledAtDesc);
+
+          renderOpenOrdersTable();
+          renderFulfilledOrdersTable();
+          updateSummaryMessage();
+          setMessage(ordersMessage, 'Order marked fulfilled.', 'success');
+        } catch (err) {
+          button.disabled = false;
+          button.textContent = 'Mark Fulfilled';
+          setMessage(ordersMessage, err.message, 'error');
+        }
+      });
+    });
+  }
+
+  function renderFulfilledOrdersTable() {
+    fulfilledOrdersTableBody.innerHTML = '';
+
+    if (fulfilledOrders.length === 0) {
+      const emptyRow = document.createElement('tr');
+      emptyRow.innerHTML = '<td class="order-empty-cell" colspan="9">No fulfilled orders yet.</td>';
+      fulfilledOrdersTableBody.appendChild(emptyRow);
+      return;
+    }
+
+    fulfilledOrders.forEach((order) => {
+      const fulfilledAt = order.fulfilledAt ? new Date(order.fulfilledAt).toLocaleString() : '';
+      const orderedAt = order.createdAt ? new Date(order.createdAt).toLocaleString() : '';
+      const row = document.createElement('tr');
+      row.innerHTML = `
+        <td>${escapeHtml(fulfilledAt)}</td>
+        <td>${escapeHtml(orderedAt)}</td>
+        <td>${escapeHtml(order.userName || '')}</td>
+        <td>${escapeHtml(order.userInitials || '')}</td>
+        <td>${escapeHtml(order.userEmail || '')}</td>
+        <td>${escapeHtml(order.itemName || '')}</td>
+        <td>${order.includeInitials ? 'Yes' : 'No'}</td>
+        <td>${escapeHtml(order.quantity || '')}</td>
+        <td>${order.venmoAgreed ? 'Yes' : 'No'}</td>
+      `;
+      fulfilledOrdersTableBody.appendChild(row);
+    });
+  }
+
+  if (openOrdersTabBtn) {
+    openOrdersTabBtn.addEventListener('click', () => setActiveTab('open'));
+  }
+  if (fulfilledOrdersTabBtn) {
+    fulfilledOrdersTabBtn.addEventListener('click', () => setActiveTab('fulfilled'));
+  }
 
   exportCsvBtn.addEventListener('click', () => {
-    const rows = orders.map((order) => [
+    if (activeTab === 'open') {
+      const rows = openOrders.map((order) => [
+        order.createdAt || '',
+        order.userName || '',
+        order.userInitials || '',
+        order.userEmail || '',
+        order.itemName || '',
+        order.includeInitials ? 'Yes' : 'No',
+        order.quantity || '',
+        order.venmoAgreed ? 'Yes' : 'No',
+        order.itemId || '',
+        order.userId || '',
+        order.id || ''
+      ]);
+
+      downloadCsv(
+        'delphic-club-merch-open-orders.csv',
+        ['createdAt', 'userName', 'userInitials', 'userEmail', 'itemName', 'includeInitials', 'quantity', 'venmoAgreed', 'itemId', 'userId', 'orderId'],
+        rows
+      );
+      return;
+    }
+
+    const rows = fulfilledOrders.map((order) => [
+      order.fulfilledAt || '',
       order.createdAt || '',
       order.userName || '',
       order.userInitials || '',
@@ -418,17 +615,23 @@ async function setupAdminOrdersPage() {
       order.includeInitials ? 'Yes' : 'No',
       order.quantity || '',
       order.venmoAgreed ? 'Yes' : 'No',
+      order.fulfilledBy || '',
       order.itemId || '',
       order.userId || '',
       order.id || ''
     ]);
 
     downloadCsv(
-      'delphic-club-merch-orders.csv',
-      ['createdAt', 'userName', 'userInitials', 'userEmail', 'itemName', 'includeInitials', 'quantity', 'venmoAgreed', 'itemId', 'userId', 'orderId'],
+      'delphic-club-merch-fulfilled-orders.csv',
+      ['fulfilledAt', 'createdAt', 'userName', 'userInitials', 'userEmail', 'itemName', 'includeInitials', 'quantity', 'venmoAgreed', 'fulfilledBy', 'itemId', 'userId', 'orderId'],
       rows
     );
   });
+
+  renderOpenOrdersTable();
+  renderFulfilledOrdersTable();
+  updateSummaryMessage();
+  setActiveTab('open');
 }
 
 setupAuthPage();

@@ -544,16 +544,64 @@ app.get('/api/admin/orders', authRequired, ownerRequired, (_req, res) => {
   const usersById = new Map(users.map((user) => [user.id, user]));
 
   const enriched = orders.map((order) => {
-    if (order.userInitials) return order;
     const user = usersById.get(order.userId);
     return {
       ...order,
-      userInitials: user?.initials || ''
+      userInitials: order.userInitials || user?.initials || '',
+      fulfilled: Boolean(order.fulfilled),
+      fulfilledAt: order.fulfilledAt || null,
+      fulfilledBy: order.fulfilledBy || null
     };
   });
 
-  const sorted = [...enriched].sort((a, b) => String(b.createdAt).localeCompare(String(a.createdAt)));
-  return res.json({ orders: sorted });
+  const openOrders = enriched
+    .filter((order) => !order.fulfilled)
+    .sort((a, b) => String(b.createdAt).localeCompare(String(a.createdAt)));
+
+  const fulfilledOrders = enriched
+    .filter((order) => order.fulfilled)
+    .sort((a, b) =>
+      String(b.fulfilledAt || b.createdAt).localeCompare(String(a.fulfilledAt || a.createdAt))
+    );
+
+  return res.json({ openOrders, fulfilledOrders });
+});
+
+app.post('/api/admin/orders/:orderId/fulfill', authRequired, ownerRequired, (req, res) => {
+  const orderId = String(req.params.orderId || '').trim();
+  if (!orderId) {
+    return res.status(400).json({ error: 'orderId is required' });
+  }
+
+  const orders = readJsonArray(ORDERS_PATH);
+  const orderIndex = orders.findIndex((order) => order.id === orderId);
+  if (orderIndex < 0) {
+    return res.status(404).json({ error: 'Order not found' });
+  }
+
+  const existing = orders[orderIndex];
+  let fallbackInitials = existing.userInitials || '';
+  if (!fallbackInitials) {
+    const users = readJsonArray(USERS_PATH);
+    const matchedUser = users.find((user) => user.id === existing.userId);
+    fallbackInitials = matchedUser?.initials || '';
+  }
+
+  const updatedOrder = {
+    ...existing,
+    userInitials: fallbackInitials,
+    fulfilled: true,
+    fulfilledAt: existing.fulfilledAt || new Date().toISOString(),
+    fulfilledBy: existing.fulfilledBy || req.user.email
+  };
+
+  orders[orderIndex] = updatedOrder;
+  writeJsonArray(ORDERS_PATH, orders);
+
+  return res.json({
+    success: true,
+    order: updatedOrder
+  });
 });
 
 app.post('/api/orders', authRequired, async (req, res) => {
@@ -588,6 +636,9 @@ app.post('/api/orders', authRequired, async (req, res) => {
     userName: req.user.name,
     userInitials: req.user.initials || '',
     userEmail: req.user.email,
+    fulfilled: false,
+    fulfilledAt: null,
+    fulfilledBy: null,
     createdAt: new Date().toISOString()
   };
 

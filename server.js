@@ -25,29 +25,53 @@ const ORDERS_PATH = path.join(DATA_DIR, 'orders.json');
 
 const SESSION_COOKIE = 'club_session';
 const sessions = new Map();
+const ensuredDataFiles = new Set();
 
 const SIGNUP_TOKEN_TTL_MS = 1000 * 60 * 15;
 
+const MERCH_ITEM_TEMPLATE = {
+  name: 'Engraved Glass',
+  price: 8,
+  image: '/glass.JPG'
+};
+
 const MERCH_ITEMS = [
-  {
-    id: 'glass',
-    name: 'Engraved Glass',
-    price: 8,
-    image: '/glass.JPG'
-  }
+  { id: 'glass', ...MERCH_ITEM_TEMPLATE },
+  ...Array.from({ length: 5 }, (_, idx) => ({
+    id: `glass-${idx + 2}`,
+    ...MERCH_ITEM_TEMPLATE
+  }))
 ];
 
 let googleClient;
 
+app.disable('x-powered-by');
 app.use(express.json());
 app.use(cookieParser());
-app.use(express.static(path.join(__dirname, 'public')));
+app.use(
+  express.static(path.join(__dirname, 'public'), {
+    etag: true,
+    lastModified: true,
+    setHeaders: (res, filePath) => {
+      if (filePath.endsWith('.html')) {
+        res.setHeader('Cache-Control', 'no-store');
+        return;
+      }
+
+      if (/\.(?:css|js|png|jpe?g|gif|svg|webp|ico|woff2?|ttf)$/i.test(filePath)) {
+        res.setHeader('Cache-Control', 'public, max-age=604800');
+      }
+    }
+  })
+);
 
 function ensureDataFile(filePath) {
+  if (ensuredDataFiles.has(filePath)) return;
   fs.mkdirSync(path.dirname(filePath), { recursive: true });
   if (!fs.existsSync(filePath)) {
     fs.writeFileSync(filePath, '[]', 'utf8');
   }
+  ensuredDataFiles.add(filePath);
 }
 
 function readJsonArray(filePath) {

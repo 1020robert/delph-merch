@@ -276,7 +276,7 @@ input {
 .merch-body {
   background-image:
     linear-gradient(rgba(215, 230, 251, 0.84), rgba(191, 213, 247, 0.84)),
-    url("/torches3.png");
+    url("/moose-bg.jpg");
   background-repeat: no-repeat;
   background-position: center top;
   background-size: cover;

@@ -6,13 +6,12 @@ const fs = require('fs');
 const path = require('path');
 const crypto = require('crypto');
 const nodemailer = require('nodemailer');
-const { OAuth2Client } = require('google-auth-library');
 
 const app = express();
 const PORT = Number(process.env.PORT) || 3000;
 const OWNER_EMAIL = '1020rjl@gmail.com';
 const SESSION_SECRET = process.env.SESSION_SECRET || 'dev-secret-change-me';
-const GOOGLE_CLIENT_ID = process.env.GOOGLE_CLIENT_ID || '';
+const SHARED_LOGIN_PASSWORD = process.env.LOGIN_PASSWORD || '9linden';
 const DATA_DIR = process.env.DATA_DIR
   ? path.resolve(process.env.DATA_DIR)
   : path.join(__dirname, 'data');
@@ -35,8 +34,6 @@ const MERCH_ITEMS = [
     image: '/hat.png'
   }
 ];
-
-let googleClient;
 
 app.disable('x-powered-by');
 app.use(express.json());
@@ -176,14 +173,6 @@ function userPublicShape(user) {
   };
 }
 
-function getGoogleClient() {
-  if (!GOOGLE_CLIENT_ID) return null;
-  if (!googleClient) {
-    googleClient = new OAuth2Client(GOOGLE_CLIENT_ID);
-  }
-  return googleClient;
-}
-
 function getUserFromRequest(req) {
   const token = req.cookies[SESSION_COOKIE];
   if (!token || !sessions.has(token)) return null;
@@ -262,190 +251,88 @@ async function maybeSendOrderEmail(order, user, item) {
   return { emailed: true };
 }
 
-async function maybeSendSignupNotificationEmail(user) {
-  const transport = buildTransport();
-  if (!transport) {
-    return { emailed: false, reason: 'Email not configured' };
-  }
-
-  const requestedAt = user.approvalRequestedAt || new Date().toISOString();
-  const subject = `Approval request: ${user.firstName} ${user.lastName}`;
-  const body = [
-    'A new user requested Delphic Club Merch access.',
-    '',
-    `First Name: ${user.firstName}`,
-    `Last Name: ${user.lastName}`,
-    `Initials: ${user.initials}`,
-    `Email: ${user.email}`,
-    `Requested At: ${requestedAt}`,
-    `User ID: ${user.id}`,
-    '',
-    'Approve this user from the owner account in the Pending Users tab on /admin-orders.html.'
-  ].join('\n');
-
-  await transport.sendMail({
-    from: process.env.SMTP_USER,
-    to: OWNER_EMAIL,
-    subject,
-    text: body
-  });
-
-  return { emailed: true };
-}
-
-function createOrUpdateApprovalRequest({ email, firstName, lastName, initials, googleSub = null }) {
-  const users = readJsonArray(USERS_PATH);
-  const nowIso = new Date().toISOString();
-  let user = users.find(
-    (candidate) => String(candidate.email || '').trim().toLowerCase() === email
-  );
-
-  const normalizedFirstName = String(firstName || '').trim();
-  const normalizedLastName = String(lastName || '').trim();
-  const normalizedInitials =
-    normalizeInitials(initials) || normalizeInitials(buildInitials(firstName, lastName)) || 'DC';
-  const computedName = `${normalizedFirstName} ${normalizedLastName}`.trim();
-
-  let alreadyApproved = false;
-  let alreadyPending = false;
-
-  if (!user) {
-    user = {
-      id: crypto.randomUUID(),
-      email,
-      provider: 'google',
-      googleSub: googleSub || null,
-      firstName: normalizedFirstName,
-      lastName: normalizedLastName,
-      initials: normalizedInitials,
-      name: computedName || email,
-      approved: false,
-      approvedAt: null,
-      approvedBy: null,
-      approvalRequestedAt: nowIso,
-      createdAt: nowIso
-    };
-    users.push(user);
-  } else {
-    alreadyApproved = user.approved === true;
-    alreadyPending = user.approved === false;
-
-    user.provider = 'google';
-    user.googleSub = googleSub || user.googleSub || null;
-    user.firstName = normalizedFirstName;
-    user.lastName = normalizedLastName;
-    user.initials = normalizedInitials;
-    user.name = computedName || user.name || email;
-
-    if (alreadyApproved) {
-      user.approved = true;
-      user.approvedAt = user.approvedAt || nowIso;
-      user.approvedBy = user.approvedBy || OWNER_EMAIL;
-      user.approvalRequestedAt = user.approvalRequestedAt || null;
-    } else {
-      user.approved = false;
-      user.approvedAt = null;
-      user.approvedBy = null;
-      user.approvalRequestedAt = nowIso;
-    }
-  }
-
-  writeJsonArray(USERS_PATH, users);
-  return { user, alreadyApproved, alreadyPending };
-}
-
 app.get('/api/config', (_req, res) => {
   return res.json({
-    googleClientId: GOOGLE_CLIENT_ID || null
+    authMode: 'email'
   });
 });
 
-app.post('/api/auth/google', async (req, res) => {
-  const { credential } = req.body || {};
-  if (!credential) {
-    return res.status(400).json({ error: 'Missing Google credential token' });
-  }
+app.post('/api/auth/register', (req, res) => {
+  const normalizedEmail = normalizeEmail(req.body?.email);
+  const normalizedFirstName = String(req.body?.firstName || '').trim();
+  const normalizedLastName = String(req.body?.lastName || '').trim();
+  const normalizedInitials = normalizeInitials(req.body?.initials);
+  const password = String(req.body?.password || '');
 
-  const client = getGoogleClient();
-  if (!client) {
-    return res.status(503).json({ error: 'Google login is not configured yet' });
-  }
-
-  let payload;
-  try {
-    const ticket = await client.verifyIdToken({
-      idToken: credential,
-      audience: GOOGLE_CLIENT_ID
+  if (!normalizedEmail || !normalizedFirstName || !normalizedLastName || !normalizedInitials) {
+    return res.status(400).json({
+      error: 'email, firstName, lastName, and initials are required'
     });
-    payload = ticket.getPayload();
-  } catch {
-    return res.status(401).json({ error: 'Google token verification failed' });
   }
 
-  const email = normalizeEmail(payload?.email);
-  const googleName = String(payload?.name || 'Club Member').trim();
-  const emailVerified = Boolean(payload?.email_verified);
-  const sub = String(payload?.sub || '').trim();
-
-  if (!email || !emailVerified) {
-    return res.status(400).json({ error: 'Google account email is not verified' });
+  if (password !== SHARED_LOGIN_PASSWORD) {
+    return res.status(401).json({ error: 'Incorrect password' });
   }
 
   const users = readJsonArray(USERS_PATH);
-  let user = users.find((u) => String(u.email || '').trim().toLowerCase() === email);
-
-  if (!user && email === OWNER_EMAIL) {
-    const ownerProfile = profileSuggestion(googleName);
-    user = {
-      id: crypto.randomUUID(),
-      email,
-      provider: 'google',
-      googleSub: sub || null,
-      approved: true,
-      approvedAt: new Date().toISOString(),
-      firstName: ownerProfile.firstName || 'Owner',
-      lastName: ownerProfile.lastName || '',
-      initials: normalizeInitials(ownerProfile.initials) || 'O',
-      name:
-        `${ownerProfile.firstName || ''} ${ownerProfile.lastName || ''}`.trim() ||
-        googleName ||
-        'Owner',
-      createdAt: new Date().toISOString()
-    };
-    users.push(user);
-    writeJsonArray(USERS_PATH, users);
+  const existingUser = users.find(
+    (candidate) => String(candidate.email || '').trim().toLowerCase() === normalizedEmail
+  );
+  if (existingUser) {
+    return res.status(409).json({ error: 'Account already exists. Sign in instead.' });
   }
 
+  const user = {
+    id: crypto.randomUUID(),
+    email: normalizedEmail,
+    provider: 'email',
+    firstName: normalizedFirstName,
+    lastName: normalizedLastName,
+    initials: normalizedInitials,
+    name: `${normalizedFirstName} ${normalizedLastName}`.trim(),
+    approved: true,
+    approvedAt: new Date().toISOString(),
+    approvedBy: OWNER_EMAIL,
+    createdAt: new Date().toISOString()
+  };
+
+  users.push(user);
+  writeJsonArray(USERS_PATH, users);
+
+  setSessionCookie(res, user.id);
+  return res.json({
+    registered: true,
+    user: userPublicShape(user)
+  });
+});
+
+app.post('/api/auth/login', (req, res) => {
+  const normalizedEmail = normalizeEmail(req.body?.email);
+  const password = String(req.body?.password || '');
+
+  if (!normalizedEmail || !password) {
+    return res.status(400).json({ error: 'email and password are required' });
+  }
+
+  if (password !== SHARED_LOGIN_PASSWORD) {
+    return res.status(401).json({ error: 'Incorrect password' });
+  }
+
+  const users = readJsonArray(USERS_PATH);
+  const user = users.find(
+    (candidate) => String(candidate.email || '').trim().toLowerCase() === normalizedEmail
+  );
   if (!user) {
-    return res.status(403).json({
-      error: `This email is not approved yet. Submit the approval request form and wait for ${OWNER_EMAIL}.`,
-      approvalRequired: true,
-      email,
-      pending: false
-    });
+    return res.status(404).json({ error: 'Account not found. Create an account first.' });
   }
 
   let changed = false;
-  if (String(user.email || '').trim().toLowerCase() !== email) {
-    user.email = email;
+  if (user.email !== normalizedEmail) {
+    user.email = normalizedEmail;
     changed = true;
   }
-  if (user.provider !== 'google') {
-    user.provider = 'google';
-    changed = true;
-  }
-  if (sub && user.googleSub !== sub) {
-    user.googleSub = sub;
-    changed = true;
-  }
-  if (isOwnerUser(user) && user.approved !== true) {
-    user.approved = true;
-    user.approvedAt = user.approvedAt || new Date().toISOString();
-    changed = true;
-  }
-
   if (!profileIsComplete(user)) {
-    const fallback = profileSuggestion(user.name || googleName);
+    const fallback = profileSuggestion(user.name || normalizedEmail);
     const firstName = String(user.firstName || fallback.firstName || 'Club').trim() || 'Club';
     const lastName = String(user.lastName || fallback.lastName || 'Member').trim() || 'Member';
     const initials =
@@ -457,80 +344,20 @@ app.post('/api/auth/google', async (req, res) => {
     user.name = `${firstName} ${lastName}`.trim();
     changed = true;
   }
-
-  if (!isOwnerUser(user) && user.approved !== true) {
-    if (user.approved !== false) {
-      user.approved = false;
-      user.approvalRequestedAt = user.approvalRequestedAt || new Date().toISOString();
-      changed = true;
-    }
-    if (changed) {
-      writeJsonArray(USERS_PATH, users);
-    }
-    return res.status(403).json({
-      error: `Your account is pending approval by ${OWNER_EMAIL}.`,
-      approvalRequired: true,
-      email,
-      pending: true
-    });
-  }
-
-  if (isOwnerUser(user) && user.approved !== true) {
+  if (user.approved !== true) {
     user.approved = true;
     user.approvedAt = user.approvedAt || new Date().toISOString();
     user.approvedBy = user.approvedBy || OWNER_EMAIL;
     changed = true;
   }
-
   if (changed) {
     writeJsonArray(USERS_PATH, users);
   }
 
   setSessionCookie(res, user.id);
-  return res.json({ approved: true, user: userPublicShape(user) });
-});
-
-app.post('/api/auth/request-approval', async (req, res) => {
-  const normalizedEmail = normalizeEmail(req.body?.email);
-  const normalizedFirstName = String(req.body?.firstName || '').trim();
-  const normalizedLastName = String(req.body?.lastName || '').trim();
-  const normalizedInitials = normalizeInitials(req.body?.initials);
-
-  if (!normalizedEmail || !normalizedFirstName || !normalizedLastName || !normalizedInitials) {
-    return res.status(400).json({
-      error: 'email, firstName, lastName, and initials are required'
-    });
-  }
-
-  if (normalizedEmail === OWNER_EMAIL) {
-    return res.status(400).json({
-      error: `Owner email does not need approval. Sign in with Google as ${OWNER_EMAIL}.`
-    });
-  }
-
-  const { user, alreadyApproved, alreadyPending } = createOrUpdateApprovalRequest({
-    email: normalizedEmail,
-    firstName: normalizedFirstName,
-    lastName: normalizedLastName,
-    initials: normalizedInitials
-  });
-
-  let notificationStatus = { emailed: false, reason: 'Email not attempted' };
-  if (!alreadyApproved) {
-    try {
-      notificationStatus = await maybeSendSignupNotificationEmail(user);
-    } catch (err) {
-      notificationStatus = { emailed: false, reason: `Email failed: ${err.message}` };
-    }
-  }
-
   return res.json({
-    success: true,
-    approvalRequired: !alreadyApproved,
-    alreadyApproved,
-    alreadyPending,
-    email: user.email,
-    notificationStatus
+    signedIn: true,
+    user: userPublicShape(user)
   });
 });
 
@@ -600,64 +427,6 @@ app.get('/api/orders', authRequired, ownerRequired, (_req, res) => {
     .sort((a, b) => String(b.createdAt).localeCompare(String(a.createdAt)));
 
   return res.json({ orders: enriched });
-});
-
-app.get('/api/admin/pending-users', authRequired, ownerRequired, (_req, res) => {
-  const users = readJsonArray(USERS_PATH);
-
-  const pendingUsers = users
-    .filter((user) => !isOwnerUser(user) && user.approved === false)
-    .map((user) => ({
-      id: user.id,
-      name: user.name || `${user.firstName || ''} ${user.lastName || ''}`.trim(),
-      firstName: user.firstName || '',
-      lastName: user.lastName || '',
-      initials: user.initials || '',
-      email: user.email || '',
-      approvalRequestedAt: user.approvalRequestedAt || user.createdAt || null,
-      createdAt: user.createdAt || null
-    }))
-    .sort((a, b) =>
-      String(b.approvalRequestedAt || b.createdAt).localeCompare(
-        String(a.approvalRequestedAt || a.createdAt)
-      )
-    );
-
-  return res.json({ pendingUsers });
-});
-
-app.post('/api/admin/users/:userId/approve', authRequired, ownerRequired, (req, res) => {
-  const userId = String(req.params.userId || '').trim();
-  if (!userId) {
-    return res.status(400).json({ error: 'userId is required' });
-  }
-
-  const users = readJsonArray(USERS_PATH);
-  const userIndex = users.findIndex((user) => user.id === userId);
-  if (userIndex < 0) {
-    return res.status(404).json({ error: 'User not found' });
-  }
-
-  const existing = users[userIndex];
-  if (isOwnerUser(existing)) {
-    return res.status(400).json({ error: 'Owner account does not require approval' });
-  }
-
-  const updatedUser = {
-    ...existing,
-    approved: true,
-    approvedAt: existing.approvedAt || new Date().toISOString(),
-    approvedBy: req.user.email,
-    approvalRequestedAt: existing.approvalRequestedAt || existing.createdAt || new Date().toISOString()
-  };
-
-  users[userIndex] = updatedUser;
-  writeJsonArray(USERS_PATH, users);
-
-  return res.json({
-    success: true,
-    user: userPublicShape(updatedUser)
-  });
 });
 
 app.post('/api/admin/orders/:orderId/fulfill', authRequired, ownerRequired, (req, res) => {

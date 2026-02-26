@@ -4,8 +4,7 @@
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
     <title>Club Merch</title>
-    <link rel="stylesheet" href="/styles.css?v=20260226b" />
-    <script src="https://accounts.google.com/gsi/client" async defer></script>
+    <link rel="stylesheet" href="/styles.css?v=20260226c" />
   </head>
   <body class="auth-body">
     <main class="auth-layout">
@@ -14,13 +13,25 @@
         <img src="/moos.png" alt="Club symbol" class="brand-moose" />
       </section>
 
-      <section class="auth-panel" id="googleAuthPanel">
+      <section class="auth-panel" id="emailAuthPanel">
         <h2 class="auth-title">Sign In</h2>
-        <p class="auth-copy">Only approved emails can sign in. Request approval below first.</p>
-        <div id="googleSignInButton" class="google-btn-wrap"></div>
+        <p class="auth-copy">Use your email and password (`9linden`) every sign-in.</p>
 
-        <form id="signupForm" class="signup-form" novalidate>
-          <p id="signupEmail" class="signup-email">Request email approval</p>
+        <form id="loginForm" class="signup-form" novalidate>
+          <p class="signup-email">Existing Account</p>
+          <label>
+            Email
+            <input type="email" name="email" maxlength="120" required placeholder="you@email.com" />
+          </label>
+          <label>
+            Password
+            <input type="password" name="password" required placeholder="9linden" />
+          </label>
+          <button type="submit" class="primary-btn">Sign In</button>
+        </form>
+
+        <form id="registerForm" class="signup-form" novalidate>
+          <p class="signup-email">Create Account</p>
           <label>
             Email
             <input type="email" name="email" maxlength="120" required placeholder="you@email.com" />
@@ -44,13 +55,17 @@
               placeholder="RJ"
             />
           </label>
-          <button type="submit" class="primary-btn">Submit Application</button>
+          <label>
+            Password
+            <input type="password" name="password" required placeholder="9linden" />
+          </label>
+          <button type="submit" class="primary-btn">Create Account</button>
         </form>
 
         <p id="authMessage" class="message"></p>
       </section>
     </main>
 
-    <script src="/app.js?v=20260226a"></script>
+    <script src="/app.js?v=20260226c"></script>
   </body>
 </html>

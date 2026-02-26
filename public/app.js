@@ -72,17 +72,6 @@ function startMerchLoadingTransition() {
   sessionStorage.setItem('showMerchLoader', '1');
 }
 
-async function waitForGoogleSdk(maxWaitMs = 5000) {
-  const started = Date.now();
-  while (Date.now() - started < maxWaitMs) {
-    if (window.google && window.google.accounts && window.google.accounts.id) {
-      return true;
-    }
-    await new Promise((resolve) => setTimeout(resolve, 100));
-  }
-  return false;
-}
-
 function csvEscape(value) {
   const stringValue = String(value ?? '');
   if (/[",\n]/.test(stringValue)) {
@@ -116,13 +105,13 @@ function downloadCsv(filename, headers, rows) {
 }
 
 async function setupAuthPage() {
-  const authPanel = document.getElementById('googleAuthPanel');
+  const authPanel = document.getElementById('emailAuthPanel');
   if (!authPanel) return;
 
   const messageEl = document.getElementById('authMessage');
-  const googleButtonEl = document.getElementById('googleSignInButton');
-  const signupForm = document.getElementById('signupForm');
-  const signupEmailEl = document.getElementById('signupEmail');
+  const loginForm = document.getElementById('loginForm');
+  const registerForm = document.getElementById('registerForm');
+  if (!loginForm || !registerForm) return;
 
   try {
     await api('/api/auth/me');
@@ -132,114 +121,48 @@ async function setupAuthPage() {
     // No active session.
   }
 
-  let config;
-  try {
-    config = await api('/api/config');
-  } catch {
-    setMessage(messageEl, 'Could not load auth config.', 'error');
-    return;
-  }
-
-  if (!config.googleClientId) {
-    setMessage(messageEl, 'Google sign-in is not configured on the server yet.', 'error');
-    return;
-  }
-
-  const sdkReady = await waitForGoogleSdk();
-  if (!sdkReady) {
-    setMessage(messageEl, 'Google sign-in script did not load. Refresh and try again.', 'error');
-    return;
-  }
-
-  window.google.accounts.id.initialize({
-    client_id: config.googleClientId,
-    callback: async (response) => {
-      setMessage(messageEl, 'Checking Google account...');
-      try {
-        const data = await api('/api/auth/google', {
-          method: 'POST',
-          body: JSON.stringify({ credential: response.credential })
-        });
-
-        startMerchLoadingTransition();
-        window.location.href = '/merch.html';
-      } catch (err) {
-        if (err.status === 403 && err.data?.approvalRequired) {
-          const pendingEmail = String(err.data?.email || '').trim();
-          if (pendingEmail && signupForm?.elements?.email) {
-            signupForm.elements.email.value = pendingEmail;
-          }
-          if (signupEmailEl) {
-            signupEmailEl.textContent = pendingEmail
-              ? `Requested email: ${pendingEmail}`
-              : 'This Google email is not approved yet.';
-          }
-          setMessage(
-            messageEl,
-            err.message || `Your account is pending approval by ${OWNER_ACCOUNT_EMAIL}.`,
-            'error'
-          );
-          return;
-        }
-        setMessage(messageEl, err.message, 'error');
-      }
-    }
-  });
-
-  window.google.accounts.id.renderButton(googleButtonEl, {
-    type: 'standard',
-    shape: 'pill',
-    theme: 'outline',
-    text: 'signin_with',
-    size: 'large',
-    width: 300
-  });
-
-  signupForm.addEventListener('submit', async (event) => {
+  loginForm.addEventListener('submit', async (event) => {
     event.preventDefault();
 
     const payload = {
-      email: signupForm.elements.email.value,
-      firstName: signupForm.elements.firstName.value,
-      lastName: signupForm.elements.lastName.value,
-      initials: signupForm.elements.initials.value
+      email: loginForm.elements.email.value,
+      password: loginForm.elements.password.value
     };
 
-    setMessage(messageEl, `Submitting approval request to ${OWNER_ACCOUNT_EMAIL}...`);
+    setMessage(messageEl, 'Signing in...');
 
     try {
-      const data = await api('/api/auth/request-approval', {
+      await api('/api/auth/login', {
         method: 'POST',
         body: JSON.stringify(payload)
       });
+      startMerchLoadingTransition();
+      window.location.href = '/merch.html';
+    } catch (err) {
+      setMessage(messageEl, err.message, 'error');
+    }
+  });
 
-      if (signupEmailEl) {
-        signupEmailEl.textContent = `Requested email: ${data.email || payload.email}`;
-      }
+  registerForm.addEventListener('submit', async (event) => {
+    event.preventDefault();
 
-      if (data.alreadyApproved) {
-        setMessage(
-          messageEl,
-          'Email is already approved. Use Sign in with Google.',
-          'success'
-        );
-        return;
-      }
+    const payload = {
+      email: registerForm.elements.email.value,
+      firstName: registerForm.elements.firstName.value,
+      lastName: registerForm.elements.lastName.value,
+      initials: registerForm.elements.initials.value,
+      password: registerForm.elements.password.value
+    };
 
-      if (data.alreadyPending) {
-        setMessage(
-          messageEl,
-          `Request re-sent. ${OWNER_ACCOUNT_EMAIL} still needs to approve this email.`,
-          'success'
-        );
-        return;
-      }
+    setMessage(messageEl, 'Creating account...');
 
-      setMessage(
-        messageEl,
-        `Request sent. ${OWNER_ACCOUNT_EMAIL} must approve your email before sign-in works.`,
-        'success'
-      );
+    try {
+      await api('/api/auth/register', {
+        method: 'POST',
+        body: JSON.stringify(payload)
+      });
+      startMerchLoadingTransition();
+      window.location.href = '/merch.html';
     } catch (err) {
       setMessage(messageEl, err.message, 'error');
     }
@@ -408,13 +331,10 @@ async function setupAdminOrdersPage() {
   if (!openOrdersTableBody) return;
 
   const fulfilledOrdersTableBody = document.getElementById('fulfilledOrdersTableBody');
-  const pendingUsersTableBody = document.getElementById('pendingUsersTableBody');
   const openOrdersPanel = document.getElementById('openOrdersPanel');
   const fulfilledOrdersPanel = document.getElementById('fulfilledOrdersPanel');
-  const pendingUsersPanel = document.getElementById('pendingUsersPanel');
   const openOrdersTabBtn = document.getElementById('openOrdersTabBtn');
   const fulfilledOrdersTabBtn = document.getElementById('fulfilledOrdersTabBtn');
-  const pendingUsersTabBtn = document.getElementById('pendingUsersTabBtn');
   const ordersMessage = document.getElementById('ordersMessage');
   const exportCsvBtn = document.getElementById('exportCsvBtn');
 
@@ -437,12 +357,8 @@ async function setupAdminOrdersPage() {
 
   let openOrders = [];
   let fulfilledOrders = [];
-  let pendingUsers = [];
   try {
-    const [ordersResponse, pendingResponse] = await Promise.all([
-      api('/api/admin/orders'),
-      api('/api/admin/pending-users')
-    ]);
+    const ordersResponse = await api('/api/admin/orders');
     const allOrders = Array.isArray(ordersResponse.orders) ? ordersResponse.orders : [];
     openOrders = Array.isArray(ordersResponse.openOrders)
       ? ordersResponse.openOrders
@@ -450,7 +366,6 @@ async function setupAdminOrdersPage() {
     fulfilledOrders = Array.isArray(ordersResponse.fulfilledOrders)
       ? ordersResponse.fulfilledOrders
       : allOrders.filter((order) => order.fulfilled);
-    pendingUsers = Array.isArray(pendingResponse.pendingUsers) ? pendingResponse.pendingUsers : [];
   } catch (err) {
     setMessage(ordersMessage, err.message, 'error');
     return;
@@ -459,28 +374,20 @@ async function setupAdminOrdersPage() {
   const byCreatedAtDesc = (a, b) => String(b.createdAt).localeCompare(String(a.createdAt));
   const byFulfilledAtDesc = (a, b) =>
     String(b.fulfilledAt || b.createdAt).localeCompare(String(a.fulfilledAt || a.createdAt));
-  const byApprovalRequestedAtDesc = (a, b) =>
-    String(b.approvalRequestedAt || b.createdAt).localeCompare(
-      String(a.approvalRequestedAt || a.createdAt)
-    );
 
   openOrders.sort(byCreatedAtDesc);
   fulfilledOrders.sort(byFulfilledAtDesc);
-  pendingUsers.sort(byApprovalRequestedAtDesc);
 
   let activeTab = 'open';
 
   function setActiveTab(tab) {
-    activeTab = ['open', 'fulfilled', 'pending'].includes(tab) ? tab : 'open';
+    activeTab = tab === 'fulfilled' ? 'fulfilled' : 'open';
 
     if (openOrdersPanel) {
       openOrdersPanel.classList.toggle('hidden', activeTab !== 'open');
     }
     if (fulfilledOrdersPanel) {
       fulfilledOrdersPanel.classList.toggle('hidden', activeTab !== 'fulfilled');
-    }
-    if (pendingUsersPanel) {
-      pendingUsersPanel.classList.toggle('hidden', activeTab !== 'pending');
     }
 
     if (openOrdersTabBtn) {
@@ -489,19 +396,16 @@ async function setupAdminOrdersPage() {
     if (fulfilledOrdersTabBtn) {
       fulfilledOrdersTabBtn.classList.toggle('active', activeTab === 'fulfilled');
     }
-    if (pendingUsersTabBtn) {
-      pendingUsersTabBtn.classList.toggle('active', activeTab === 'pending');
-    }
   }
 
   function updateSummaryMessage() {
-    if (openOrders.length === 0 && fulfilledOrders.length === 0 && pendingUsers.length === 0) {
-      setMessage(ordersMessage, 'No orders or pending applicants yet.');
+    if (openOrders.length === 0 && fulfilledOrders.length === 0) {
+      setMessage(ordersMessage, 'No orders yet.');
       return;
     }
     setMessage(
       ordersMessage,
-      `${openOrders.length} open order(s), ${fulfilledOrders.length} fulfilled order(s), ${pendingUsers.length} pending applicant(s).`,
+      `${openOrders.length} open order(s), ${fulfilledOrders.length} fulfilled order(s).`,
       'success'
     );
   }
@@ -573,63 +477,6 @@ async function setupAdminOrdersPage() {
     });
   }
 
-  function renderPendingUsersTable() {
-    if (!pendingUsersTableBody) return;
-    pendingUsersTableBody.innerHTML = '';
-
-    if (pendingUsers.length === 0) {
-      const emptyRow = document.createElement('tr');
-      emptyRow.innerHTML =
-        '<td class="order-empty-cell" colspan="6">No pending applicants.</td>';
-      pendingUsersTableBody.appendChild(emptyRow);
-      return;
-    }
-
-    pendingUsers.forEach((userEntry) => {
-      const row = document.createElement('tr');
-      const requestedAt = userEntry.approvalRequestedAt
-        ? new Date(userEntry.approvalRequestedAt).toLocaleString()
-        : '';
-      row.innerHTML = `
-        <td>${escapeHtml(requestedAt)}</td>
-        <td>${escapeHtml(userEntry.name || '')}</td>
-        <td>${escapeHtml(userEntry.initials || '')}</td>
-        <td>${escapeHtml(userEntry.email || '')}</td>
-        <td>${escapeHtml(userEntry.id || '')}</td>
-        <td>
-          <button class="order-action-btn approve-user-btn" type="button" data-user-id="${escapeHtml(
-            userEntry.id || ''
-          )}">
-            Approve
-          </button>
-        </td>
-      `;
-      pendingUsersTableBody.appendChild(row);
-    });
-
-    pendingUsersTableBody.querySelectorAll('.approve-user-btn').forEach((button) => {
-      button.addEventListener('click', async () => {
-        const userId = button.dataset.userId;
-        if (!userId) return;
-
-        button.disabled = true;
-        button.textContent = 'Approving...';
-
-        try {
-          await api(`/api/admin/users/${encodeURIComponent(userId)}/approve`, { method: 'POST' });
-          pendingUsers = pendingUsers.filter((userEntry) => userEntry.id !== userId);
-          renderPendingUsersTable();
-          updateSummaryMessage();
-          setMessage(ordersMessage, 'User approved successfully.', 'success');
-        } catch (err) {
-          button.disabled = false;
-          button.textContent = 'Approve';
-          setMessage(ordersMessage, err.message, 'error');
-        }
-      });
-    });
-  }
-
   function renderFulfilledOrdersTable() {
     fulfilledOrdersTableBody.innerHTML = '';
 
@@ -664,9 +511,6 @@ async function setupAdminOrdersPage() {
   }
   if (fulfilledOrdersTabBtn) {
     fulfilledOrdersTabBtn.addEventListener('click', () => setActiveTab('fulfilled'));
-  }
-  if (pendingUsersTabBtn) {
-    pendingUsersTabBtn.addEventListener('click', () => setActiveTab('pending'));
   }
 
   if (exportCsvBtn) {
@@ -744,36 +588,13 @@ async function setupAdminOrdersPage() {
         );
         return;
       }
-
-      const rows = pendingUsers.map((userEntry) => [
-        userEntry.approvalRequestedAt || '',
-        userEntry.name || '',
-        userEntry.initials || '',
-        userEntry.email || '',
-        userEntry.id || ''
-      ]);
-
-      downloadCsv(
-        'delphic-club-merch-pending-users.csv',
-        ['approvalRequestedAt', 'name', 'initials', 'email', 'userId'],
-        rows
-      );
     });
   }
 
   renderOpenOrdersTable();
   renderFulfilledOrdersTable();
-  renderPendingUsersTable();
   updateSummaryMessage();
-  setActiveTab(
-    openOrders.length > 0
-      ? 'open'
-      : pendingUsers.length > 0
-        ? 'pending'
-        : fulfilledOrders.length > 0
-          ? 'fulfilled'
-          : 'open'
-  );
+  setActiveTab(openOrders.length > 0 || fulfilledOrders.length === 0 ? 'open' : 'fulfilled');
 }
 
 setupAuthPage();

@@ -108,38 +108,115 @@ async function setupAuthPage() {
   const authPanel = document.getElementById('emailAuthPanel');
   if (!authPanel) return;
 
-  const messageEl = document.getElementById('authMessage');
+  const emailStep = document.getElementById('emailStep');
+  const passwordStep = document.getElementById('passwordStep');
+  const authTitle = document.getElementById('authTitle');
+  const authCopy = document.getElementById('authCopy');
+  const emailMessageEl = document.getElementById('authMessage');
+  const passwordMessageEl = document.getElementById('passwordMessage');
   const loginForm = document.getElementById('loginForm');
   const registerForm = document.getElementById('registerForm');
-  if (!loginForm || !registerForm) return;
+  const showRegisterBtn = document.getElementById('showRegisterBtn');
+  const showLoginBtn = document.getElementById('showLoginBtn');
+  const passwordGateForm = document.getElementById('passwordGateForm');
+  const passwordBackBtn = document.getElementById('passwordBackBtn');
+  if (
+    !emailStep ||
+    !passwordStep ||
+    !authTitle ||
+    !authCopy ||
+    !loginForm ||
+    !registerForm ||
+    !showRegisterBtn ||
+    !showLoginBtn ||
+    !passwordGateForm ||
+    !passwordBackBtn
+  ) {
+    return;
+  }
+
+  function showLoginForm() {
+    authTitle.textContent = 'Sign In';
+    authCopy.textContent = 'Sign in to continue to the merch page.';
+    loginForm.classList.remove('hidden');
+    registerForm.classList.add('hidden');
+    setMessage(emailMessageEl, '');
+  }
+
+  function showRegisterForm() {
+    authTitle.textContent = 'Create Account';
+    authCopy.textContent = 'Create your account, then continue to password verification.';
+    registerForm.classList.remove('hidden');
+    loginForm.classList.add('hidden');
+    setMessage(emailMessageEl, '');
+  }
+
+  function showEmailStep() {
+    emailStep.classList.remove('hidden');
+    passwordStep.classList.add('hidden');
+    setMessage(passwordMessageEl, '');
+  }
+
+  function showPasswordStep(copy = '') {
+    emailStep.classList.add('hidden');
+    passwordStep.classList.remove('hidden');
+    setMessage(emailMessageEl, '');
+    if (copy) setMessage(passwordMessageEl, copy);
+    if (passwordGateForm.elements.password) {
+      passwordGateForm.elements.password.value = '';
+      passwordGateForm.elements.password.focus();
+    }
+  }
+
+  function continueToMerchPage() {
+    startMerchLoadingTransition();
+    window.location.href = '/merch.html';
+  }
 
   try {
-    await api('/api/auth/me');
-    window.location.href = '/merch.html';
+    const me = await api('/api/auth/me');
+    if (me.passwordRequired) {
+      showPasswordStep('Enter the club password to continue.');
+      return;
+    }
+    continueToMerchPage();
     return;
   } catch {
     // No active session.
   }
 
+  showEmailStep();
+  showLoginForm();
+
+  showRegisterBtn.addEventListener('click', () => {
+    showRegisterForm();
+  });
+
+  showLoginBtn.addEventListener('click', () => {
+    showLoginForm();
+  });
+
   loginForm.addEventListener('submit', async (event) => {
     event.preventDefault();
 
     const payload = {
-      email: loginForm.elements.email.value,
-      password: loginForm.elements.password.value
+      email: loginForm.elements.email.value
     };
 
-    setMessage(messageEl, 'Signing in...');
+    setMessage(emailMessageEl, 'Signing in...');
 
     try {
-      await api('/api/auth/login', {
+      const data = await api('/api/auth/login', {
         method: 'POST',
         body: JSON.stringify(payload)
       });
-      startMerchLoadingTransition();
-      window.location.href = '/merch.html';
+      if (data.passwordRequired) {
+        showPasswordStep('Enter the club password to continue.');
+        return;
+      }
+      continueToMerchPage();
     } catch (err) {
-      setMessage(messageEl, err.message, 'error');
+      setMessage(emailMessageEl, err.message, 'error');
     }
   });
 
@@ -150,22 +227,56 @@ async function setupAuthPage() {
       email: registerForm.elements.email.value,
       firstName: registerForm.elements.firstName.value,
       lastName: registerForm.elements.lastName.value,
-      initials: registerForm.elements.initials.value,
-      password: registerForm.elements.password.value
+      initials: registerForm.elements.initials.value
     };
 
-    setMessage(messageEl, 'Creating account...');
+    setMessage(emailMessageEl, 'Creating account...');
 
     try {
-      await api('/api/auth/register', {
+      const data = await api('/api/auth/register', {
         method: 'POST',
         body: JSON.stringify(payload)
       });
-      startMerchLoadingTransition();
-      window.location.href = '/merch.html';
+      if (data.passwordRequired) {
+        showPasswordStep('Account created. Enter the club password to continue.');
+        return;
+      }
+      continueToMerchPage();
     } catch (err) {
-      setMessage(messageEl, err.message, 'error');
+      setMessage(emailMessageEl, err.message, 'error');
     }
+  });
+
+  passwordGateForm.addEventListener('submit', async (event) => {
+    event.preventDefault();
+
+    const payload = {
+      password: passwordGateForm.elements.password.value
+    };
+
+    setMessage(passwordMessageEl, 'Verifying password...');
+
+    try {
+      await api('/api/auth/verify-password', {
+        method: 'POST',
+        body: JSON.stringify(payload)
+      });
+      continueToMerchPage();
+    } catch (err) {
+      setMessage(passwordMessageEl, err.message, 'error');
+    }
+  });
+
+  passwordBackBtn.addEventListener('click', async () => {
+    try {
+      await api('/api/auth/logout', { method: 'POST' });
+    } catch {
+      // Ignore and reset local view state.
+    }
+    showEmailStep();
+    showLoginForm();
+    loginForm.reset();
+    registerForm.reset();
   });
 }
 
@@ -180,6 +291,10 @@ async function setupMerchPage() {
   let user;
   try {
     const me = await api('/api/auth/me');
+    if (me.passwordRequired) {
+      window.location.href = '/';
+      return;
+    }
     user = me.user;
   } catch {
     window.location.href = '/';
@@ -253,6 +368,10 @@ async function setupProductPage() {
   let user;
   try {
     const me = await api('/api/auth/me');
+    if (me.passwordRequired) {
+      window.location.href = '/';
+      return;
+    }
     user = me.user;
   } catch {
     window.location.href = '/';
@@ -341,6 +460,10 @@ async function setupAdminOrdersPage() {
   let user;
   try {
     const me = await api('/api/auth/me');
+    if (me.passwordRequired) {
+      window.location.href = '/';
+      return;
+    }
     user = me.user;
   } catch {
     window.location.href = '/';

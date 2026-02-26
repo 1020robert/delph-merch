@@ -4,7 +4,7 @@
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
     <title>Club Merch</title>
-    <link rel="stylesheet" href="/styles.css?v=20260226d" />
+    <link rel="stylesheet" href="/styles.css?v=20260226f" />
   </head>
   <body class="auth-body">
     <main class="auth-layout">
@@ -14,58 +14,66 @@
       </section>
 
       <section class="auth-panel" id="emailAuthPanel">
-        <h2 class="auth-title">Sign In</h2>
-        <p class="auth-copy">Use your email and password (`9linden`) every sign-in.</p>
+        <div id="emailStep" class="auth-step">
+          <h2 class="auth-title" id="authTitle">Sign In</h2>
+          <p class="auth-copy" id="authCopy">Sign in to continue to the merch page.</p>
 
-        <form id="loginForm" class="signup-form" novalidate>
-          <p class="signup-email">Existing Account</p>
-          <label>
-            Email
-            <input type="email" name="email" maxlength="120" required placeholder="you@email.com" />
-          </label>
-          <label>
-            Password
-            <input type="password" name="password" required placeholder="9linden" />
-          </label>
-          <button type="submit" class="primary-btn">Sign In</button>
-        </form>
+          <form id="loginForm" class="signup-form" novalidate>
+            <label>
+              Email
+              <input type="email" name="email" maxlength="120" required placeholder="you@email.com" />
+            </label>
+            <button type="submit" class="primary-btn">Sign In</button>
+            <button type="button" id="showRegisterBtn" class="secondary-btn">Create Account</button>
+          </form>
 
-        <form id="registerForm" class="signup-form" novalidate>
-          <p class="signup-email">Create Account</p>
-          <label>
-            Email
-            <input type="email" name="email" maxlength="120" required placeholder="you@email.com" />
-          </label>
-          <label>
-            First Name
-            <input type="text" name="firstName" maxlength="50" required />
-          </label>
-          <label>
-            Last Name
-            <input type="text" name="lastName" maxlength="50" required />
-          </label>
-          <label>
-            Initials
-            <input
-              type="text"
-              name="initials"
-              maxlength="5"
-              required
-              pattern="[A-Za-z]{1,5}"
-              placeholder="RJ"
-            />
-          </label>
-          <label>
-            Password
-            <input type="password" name="password" required placeholder="9linden" />
-          </label>
-          <button type="submit" class="primary-btn">Create Account</button>
-        </form>
+          <form id="registerForm" class="signup-form hidden" novalidate>
+            <label>
+              Email
+              <input type="email" name="email" maxlength="120" required placeholder="you@email.com" />
+            </label>
+            <label>
+              First Name
+              <input type="text" name="firstName" maxlength="50" required />
+            </label>
+            <label>
+              Last Name
+              <input type="text" name="lastName" maxlength="50" required />
+            </label>
+            <label>
+              Initials
+              <input
+                type="text"
+                name="initials"
+                maxlength="5"
+                required
+                pattern="[A-Za-z]{1,5}"
+                placeholder="RJ"
+              />
+            </label>
+            <button type="submit" class="primary-btn">Create Account</button>
+            <button type="button" id="showLoginBtn" class="secondary-btn">Back to Sign In</button>
+          </form>
 
-        <p id="authMessage" class="message"></p>
+          <p id="authMessage" class="message"></p>
+        </div>
+
+        <div id="passwordStep" class="auth-step hidden">
+          <h2 class="auth-title">Enter Club Password</h2>
+          <p class="auth-copy">Account found. Enter the club password to access merch.</p>
+          <form id="passwordGateForm" class="signup-form" novalidate>
+            <label>
+              Password
+              <input type="password" name="password" required autocomplete="current-password" />
+            </label>
+            <button type="submit" class="primary-btn">Continue</button>
+            <button type="button" id="passwordBackBtn" class="secondary-btn">Start Over</button>
+          </form>
+          <p id="passwordMessage" class="message"></p>
+        </div>
       </section>
     </main>
 
-    <script src="/app.js?v=20260226d"></script>
+    <script src="/app.js?v=20260226e"></script>
   </body>
 </html>

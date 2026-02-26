@@ -11,7 +11,7 @@ const app = express();
 const PORT = Number(process.env.PORT) || 3000;
 const OWNER_EMAIL = '1020rjl@gmail.com';
 const SESSION_SECRET = process.env.SESSION_SECRET || 'dev-secret-change-me';
-const SHARED_LOGIN_PASSWORD = process.env.LOGIN_PASSWORD || '9linden';
+const SHARED_LOGIN_PASSWORD = String(process.env.LOGIN_PASSWORD || '').trim();
 const DATA_DIR = process.env.DATA_DIR
   ? path.resolve(process.env.DATA_DIR)
   : path.join(__dirname, 'data');
@@ -29,7 +29,7 @@ const ensuredDataFiles = new Set();
 const MERCH_ITEMS = [
   {
     id: 'torch-hat',
-    name: 'Delphic Torch Hat',
+    name: "'47 Delph Hat",
     price: 25,
     image: '/hat2.png'
   }
@@ -83,16 +83,16 @@ function signValue(raw) {
   return crypto.createHmac('sha256', SESSION_SECRET).update(raw).digest('hex');
 }
 
-function createSession(userId) {
+function createSession(userId, passwordVerified = false) {
   const raw = `${userId}:${Date.now()}:${crypto.randomBytes(24).toString('hex')}`;
   const signature = signValue(raw);
   const token = Buffer.from(`${raw}:${signature}`).toString('base64url');
-  sessions.set(token, { userId, createdAt: new Date().toISOString() });
+  sessions.set(token, { userId, passwordVerified: Boolean(passwordVerified), createdAt: new Date().toISOString() });
   return token;
 }
 
-function setSessionCookie(res, userId) {
-  const token = createSession(userId);
+function setSessionCookie(res, userId, passwordVerified = false) {
+  const token = createSession(userId, passwordVerified);
   res.cookie(SESSION_COOKIE, token, {
     httpOnly: true,
     sameSite: 'lax',
@@ -168,12 +168,11 @@ function userPublicShape(user) {
     lastName: user.lastName,
     initials: user.initials,
     email: user.email,
-    approved: user.approved !== false,
     isOwner: isOwnerUser(user)
   };
 }
 
-function getUserFromRequest(req) {
+function getAuthContext(req) {
   const token = req.cookies[SESSION_COOKIE];
   if (!token || !sessions.has(token)) return null;
 
@@ -186,15 +185,19 @@ function getUserFromRequest(req) {
     return null;
   }
 
-  return user;
+  return { token, session, user };
 }
 
 function authRequired(req, res, next) {
-  const user = getUserFromRequest(req);
-  if (!user) {
+  const context = getAuthContext(req);
+  if (!context) {
     return res.status(401).json({ error: 'Not signed in' });
   }
-  req.user = user;
+  if (!context.session.passwordVerified) {
+    return res.status(403).json({ error: 'Password verification required', passwordRequired: true });
+  }
+  req.user = context.user;
+  req.authSession = context.session;
   return next();
 }
 
@@ -262,16 +265,11 @@ app.post('/api/auth/register', (req, res) => {
   const normalizedFirstName = String(req.body?.firstName || '').trim();
   const normalizedLastName = String(req.body?.lastName || '').trim();
   const normalizedInitials = normalizeInitials(req.body?.initials);
-  const password = String(req.body?.password || '');
 
   if (!normalizedEmail || !normalizedFirstName || !normalizedLastName || !normalizedInitials) {
     return res.status(400).json({
       error: 'email, firstName, lastName, and initials are required'
     });
-  }
-
-  if (password !== SHARED_LOGIN_PASSWORD) {
-    return res.status(401).json({ error: 'Incorrect password' });
   }
 
   const users = readJsonArray(USERS_PATH);
@@ -299,23 +297,19 @@ app.post('/api/auth/register', (req, res) => {
   users.push(user);
   writeJsonArray(USERS_PATH, users);
 
-  setSessionCookie(res, user.id);
+  setSessionCookie(res, user.id, false);
   return res.json({
     registered: true,
+    passwordRequired: true,
     user: userPublicShape(user)
   });
 });
 
 app.post('/api/auth/login', (req, res) => {
   const normalizedEmail = normalizeEmail(req.body?.email);
-  const password = String(req.body?.password || '');
 
-  if (!normalizedEmail || !password) {
-    return res.status(400).json({ error: 'email and password are required' });
-  }
-
-  if (password !== SHARED_LOGIN_PASSWORD) {
-    return res.status(401).json({ error: 'Incorrect password' });
+  if (!normalizedEmail) {
+    return res.status(400).json({ error: 'email is required' });
   }
 
   const users = readJsonArray(USERS_PATH);
@@ -354,10 +348,39 @@ app.post('/api/auth/login', (req, res) => {
     writeJsonArray(USERS_PATH, users);
   }
 
-  setSessionCookie(res, user.id);
+  setSessionCookie(res, user.id, false);
   return res.json({
     signedIn: true,
+    passwordRequired: true,
     user: userPublicShape(user)
+  });
+});
+
+app.post('/api/auth/verify-password', (req, res) => {
+  const context = getAuthContext(req);
+  if (!context) {
+    return res.status(401).json({ error: 'Sign in first' });
+  }
+  if (!SHARED_LOGIN_PASSWORD) {
+    return res
+      .status(503)
+      .json({ error: 'Password verification is not configured on the server' });
+  }
+
+  const password = String(req.body?.password || '');
+  if (!password) {
+    return res.status(400).json({ error: 'password is required' });
+  }
+  if (password !== SHARED_LOGIN_PASSWORD) {
+    return res.status(401).json({ error: 'Incorrect password' });
+  }
+
+  context.session.passwordVerified = true;
+  context.session.passwordVerifiedAt = new Date().toISOString();
+
+  return res.json({
+    success: true,
+    user: userPublicShape(context.user)
   });
 });
 
@@ -369,10 +392,13 @@ app.post('/api/auth/logout', (req, res) => {
 });
 
 app.get('/api/auth/me', (req, res) => {
-  const user = getUserFromRequest(req);
-  if (!user) return res.status(401).json({ error: 'Not signed in' });
+  const context = getAuthContext(req);
+  if (!context) return res.status(401).json({ error: 'Not signed in' });
 
-  return res.json({ user: userPublicShape(user) });
+  return res.json({
+    user: userPublicShape(context.user),
+    passwordRequired: !context.session.passwordVerified
+  });
 });
 
 app.get('/api/merch', authRequired, (_req, res) => {

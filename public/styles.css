@@ -382,15 +382,15 @@ input {
 
 .catalog-photo-wrap {
   border-radius: 28px;
-  padding: 12px;
-  box-shadow: inset 0 4px 0 #d8bb7a;
+  padding: 0;
+  box-shadow: none;
 }
 
 .item-photo-wrap {
-  border: 1px solid #d8bb7a;
-  border-radius: 12px;
+  border: none;
+  border-radius: 18px;
   overflow: hidden;
-  background: #f6f1e1;
+  background: transparent;
 }
 
 .catalog-photo {
@@ -765,7 +765,7 @@ input {
 
   .merch-body:not(.product-body) .catalog-photo-wrap {
     border-radius: 18px;
-    padding: 8px;
+    padding: 0;
   }
 }
 

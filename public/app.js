@@ -157,11 +157,11 @@ async function setupAuthPage() {
     setMessage(passwordMessageEl, '');
   }
 
-  function showPasswordStep(copy = '') {
+  function showPasswordStep() {
     emailStep.classList.add('hidden');
     passwordStep.classList.remove('hidden');
     setMessage(emailMessageEl, '');
-    if (copy) setMessage(passwordMessageEl, copy);
+    setMessage(passwordMessageEl, '');
     if (passwordGateForm.elements.password) {
       passwordGateForm.elements.password.value = '';
       passwordGateForm.elements.password.focus();
@@ -176,7 +176,7 @@ async function setupAuthPage() {
   try {
     const me = await api('/api/auth/me');
     if (me.passwordRequired) {
-      showPasswordStep('Enter the club password to continue.');
+      showPasswordStep();
       return;
     }
     continueToMerchPage();
@@ -211,7 +211,7 @@ async function setupAuthPage() {
         body: JSON.stringify(payload)
       });
       if (data.passwordRequired) {
-        showPasswordStep('Enter the club password to continue.');
+        showPasswordStep();
         return;
       }
       continueToMerchPage();
@@ -238,7 +238,7 @@ async function setupAuthPage() {
         body: JSON.stringify(payload)
       });
       if (data.passwordRequired) {
-        showPasswordStep('Account created. Enter the club password to continue.');
+        showPasswordStep();
         return;
       }
       continueToMerchPage();
@@ -263,6 +263,14 @@ async function setupAuthPage() {
       });
       continueToMerchPage();
     } catch (err) {
+      if (err.status === 503) {
+        setMessage(
+          passwordMessageEl,
+          'Password verification is unavailable right now. Owner must configure LOGIN_PASSWORD.',
+          'error'
+        );
+        return;
+      }
       setMessage(passwordMessageEl, err.message, 'error');
     }
   });

@@ -27,18 +27,13 @@ const SESSION_COOKIE = 'club_session';
 const sessions = new Map();
 const ensuredDataFiles = new Set();
 
-const MERCH_ITEM_TEMPLATE = {
-  name: 'Engraved Glass',
-  price: 8,
-  image: '/glass.JPG'
-};
-
 const MERCH_ITEMS = [
-  { id: 'glass', ...MERCH_ITEM_TEMPLATE },
-  ...Array.from({ length: 5 }, (_, idx) => ({
-    id: `glass-${idx + 2}`,
-    ...MERCH_ITEM_TEMPLATE
-  }))
+  {
+    id: 'torch-hat',
+    name: 'Delphic Torch Hat',
+    price: 25,
+    image: '/hat.png'
+  }
 ];
 
 let googleClient;
@@ -244,14 +239,13 @@ async function maybeSendOrderEmail(order, user, item) {
     return { emailed: false, reason: 'Email not configured' };
   }
 
-  const subject = `New Club Merch order: ${item.name}`;
+  const subject = `New Club Merch pre-order: ${item.name}`;
   const body = [
-    'A new merch order was placed.',
+    'A new merch pre-order was placed.',
     '',
     `Name: ${user.name}`,
     `Email: ${user.email}`,
     `Item: ${item.name}`,
-    `Include Initials: ${order.includeInitials ? 'Yes' : 'No'}`,
     `Quantity: ${order.quantity}`,
     `Venmo Agreed: ${order.venmoAgreed ? 'Yes' : 'No'}`,
     `Ordered At: ${order.createdAt}`,
@@ -704,7 +698,7 @@ app.post('/api/admin/orders/:orderId/fulfill', authRequired, ownerRequired, (req
 });
 
 app.post('/api/orders', authRequired, async (req, res) => {
-  const { itemId, quantity, venmoAgreed, includeInitials } = req.body || {};
+  const { itemId, quantity, venmoAgreed } = req.body || {};
   const qty = Number(quantity);
 
   if (!itemId || Number.isNaN(qty)) {
@@ -728,7 +722,7 @@ app.post('/api/orders', authRequired, async (req, res) => {
     id: crypto.randomUUID(),
     itemId: item.id,
     itemName: item.name,
-    includeInitials: Boolean(includeInitials),
+    includeInitials: false,
     quantity: qty,
     venmoAgreed: Boolean(venmoAgreed),
     userId: req.user.id,

@@ -16,7 +16,7 @@ async function api(path, options = {}) {
 }
 
 const OWNER_ACCOUNT_EMAIL = '1020rjl@gmail.com';
-const MERCH_CACHE_KEY = 'merchItemsCacheV1';
+const MERCH_CACHE_KEY = 'merchItemsCacheV2';
 
 function isOwnerAccount(user) {
   const email = String(user?.email || '')
@@ -302,7 +302,7 @@ async function setupMerchPage() {
     card.innerHTML = `
       <a class="catalog-link" href="/product.html?item=${encodeURIComponent(item.id)}">
         <div class="item-photo-wrap catalog-photo-wrap">
-          <img src="${item.image || '/glass.JPG'}" alt="${item.name}" class="item-photo catalog-photo" loading="lazy" decoding="async" fetchpriority="low" />
+          <img src="${item.image || '/hat.png'}" alt="${item.name}" class="item-photo catalog-photo" loading="lazy" decoding="async" fetchpriority="low" />
         </div>
         <h3 class="item-name catalog-name">${item.name}</h3>
         <p class="catalog-price">${formatCurrency(item.price)}</p>
@@ -322,7 +322,6 @@ async function setupProductPage() {
   const productTitle = document.getElementById('productTitle');
   const productPrice = document.getElementById('productPrice');
   const productImage = document.getElementById('productImage');
-  const includeInitialsBox = document.getElementById('productIncludeInitials');
   const quantityInput = document.getElementById('productQuantity');
   const venmoBox = document.getElementById('productVenmo');
   const orderButton = document.getElementById('submitProductOrder');
@@ -356,7 +355,7 @@ async function setupProductPage() {
   const itemIdFromUrl = new URLSearchParams(window.location.search).get('item');
   const item =
     items.find((candidate) => candidate.id === itemIdFromUrl) ||
-    items.find((candidate) => candidate.id === 'glass') ||
+    items.find((candidate) => candidate.id === 'torch-hat') ||
     items[0];
 
   if (!item) {
@@ -366,19 +365,18 @@ async function setupProductPage() {
 
   productTitle.textContent = item.name;
   productPrice.textContent = formatCurrency(item.price);
-  productImage.src = item.image || '/glass.JPG';
+  productImage.src = item.image || '/hat.png';
   productImage.alt = item.name;
   productImage.decoding = 'async';
 
   orderButton.addEventListener('click', async () => {
-    setMessage(messageEl, 'Submitting order...');
+    setMessage(messageEl, 'Submitting pre-order...');
     orderButton.disabled = true;
     try {
       const data = await api('/api/orders', {
         method: 'POST',
         body: JSON.stringify({
           itemId: item.id,
-          includeInitials: Boolean(includeInitialsBox?.checked),
           quantity: Number(quantityInput.value),
           venmoAgreed: venmoBox.checked
         })
@@ -390,12 +388,11 @@ async function setupProductPage() {
 
       setMessage(
         messageEl,
-        `Order received for ${data.order.quantity} x ${item.name}. Include initials: ${data.order.includeInitials ? 'Yes' : 'No'}.${emailInfo} Returning to merch page...`,
+        `Pre-order received for ${data.order.quantity} x ${item.name}.${emailInfo} Returning to merch page...`,
         'success'
       );
       quantityInput.value = '1';
       venmoBox.checked = false;
-      if (includeInitialsBox) includeInitialsBox.checked = false;
       setTimeout(() => {
         window.location.href = '/merch.html';
       }, 1400);

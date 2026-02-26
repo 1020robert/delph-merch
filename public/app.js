@@ -16,7 +16,7 @@ async function api(path, options = {}) {
 }
 
 const OWNER_ACCOUNT_EMAIL = '1020rjl@gmail.com';
-const MERCH_CACHE_KEY = 'merchItemsCacheV2';
+const MERCH_CACHE_KEY = 'merchItemsCacheV3';
 
 function isOwnerAccount(user) {
   const email = String(user?.email || '')
@@ -225,7 +225,7 @@ async function setupMerchPage() {
     card.innerHTML = `
       <a class="catalog-link" href="/product.html?item=${encodeURIComponent(item.id)}">
         <div class="item-photo-wrap catalog-photo-wrap">
-          <img src="${item.image || '/hat.png'}" alt="${item.name}" class="item-photo catalog-photo" loading="lazy" decoding="async" fetchpriority="low" />
+          <img src="${item.image || '/hat2.png'}" alt="${item.name}" class="item-photo catalog-photo" loading="lazy" decoding="async" fetchpriority="low" />
         </div>
         <h3 class="item-name catalog-name">${item.name}</h3>
         <p class="catalog-price">${formatCurrency(item.price)}</p>
@@ -288,7 +288,7 @@ async function setupProductPage() {
 
   productTitle.textContent = item.name;
   productPrice.textContent = formatCurrency(item.price);
-  productImage.src = item.image || '/hat.png';
+  productImage.src = item.image || '/hat2.png';
   productImage.alt = item.name;
   productImage.decoding = 'async';
 

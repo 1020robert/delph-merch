@@ -31,7 +31,7 @@ const MERCH_ITEMS = [
     id: 'torch-hat',
     name: 'Delphic Torch Hat',
     price: 25,
-    image: '/hat.png'
+    image: '/hat2.png'
   }
 ];
 

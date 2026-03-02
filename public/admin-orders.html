@@ -4,7 +4,7 @@
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
     <title>Club Merch Orders</title>
-    <link rel="stylesheet" href="/styles.css?v=20260226h" />
+    <link rel="stylesheet" href="/styles.css?v=20260302a" />
   </head>
   <body>
     <header class="topbar">
@@ -27,6 +27,9 @@
           <button id="fulfilledOrdersTabBtn" class="orders-tab" type="button" role="tab">
             Fulfilled History
           </button>
+          <button id="manageProductsTabBtn" class="orders-tab" type="button" role="tab">
+            Manage Products
+          </button>
         </div>
       </div>
 
@@ -40,6 +43,7 @@
                 <th>Initials</th>
                 <th>Email</th>
                 <th>Item</th>
+                <th>Size</th>
                 <th>Include Initials</th>
                 <th>Quantity</th>
                 <th>Venmo Agreed</th>
@@ -62,6 +66,7 @@
                 <th>Initials</th>
                 <th>Email</th>
                 <th>Item</th>
+                <th>Size</th>
                 <th>Include Initials</th>
                 <th>Quantity</th>
                 <th>Venmo Agreed</th>
@@ -72,9 +77,61 @@
         </div>
       </section>
 
+      <section id="manageProductsPanel" class="orders-table-panel hidden">
+        <div class="manage-products-grid">
+          <section class="intro-card">
+            <h3 class="manage-products-title">Add Product</h3>
+            <form id="addProductForm" class="manage-products-form" novalidate>
+              <label>
+                Product Name
+                <input id="newProductName" type="text" maxlength="80" required />
+              </label>
+              <label>
+                Price (USD)
+                <input id="newProductPrice" type="number" min="0.01" max="10000" step="0.01" required />
+              </label>
+              <label>
+                Product PNG
+                <input id="newProductImage" type="file" accept="image/png" required />
+              </label>
+
+              <fieldset class="size-fieldset">
+                <legend>Sizes (optional)</legend>
+                <div class="size-checkbox-grid">
+                  <label><input type="checkbox" name="sizeOption" value="S" /> S</label>
+                  <label><input type="checkbox" name="sizeOption" value="M" /> M</label>
+                  <label><input type="checkbox" name="sizeOption" value="L" /> L</label>
+                  <label><input type="checkbox" name="sizeOption" value="XL" /> XL</label>
+                  <label><input type="checkbox" name="sizeOption" value="2XL" /> 2XL</label>
+                  <label><input type="checkbox" name="sizeOption" value="3XL" /> 3XL</label>
+                </div>
+              </fieldset>
+
+              <label>
+                Custom Sizes (optional, comma separated)
+                <input id="newProductCustomSizes" type="text" maxlength="120" placeholder="Youth M, 4XL" />
+              </label>
+
+              <label class="venmo-row">
+                <input id="newProductAllowInitials" type="checkbox" />
+                Include initials option for buyers
+              </label>
+
+              <button type="submit" class="primary-btn">Publish Product</button>
+            </form>
+            <p id="productFormMessage" class="message"></p>
+          </section>
+
+          <section class="intro-card">
+            <h3 class="manage-products-title">Live Products</h3>
+            <div id="ownerProductsList" class="owner-products-list"></div>
+          </section>
+        </div>
+      </section>
+
       <p id="ordersMessage" class="message"></p>
     </main>
 
-    <script src="/app.js?v=20260226h"></script>
+    <script src="/app.js?v=20260302a"></script>
   </body>
 </html>

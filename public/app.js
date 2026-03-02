@@ -16,7 +16,8 @@ async function api(path, options = {}) {
 }
 
 const OWNER_ACCOUNT_EMAIL = '1020rjl@gmail.com';
-const MERCH_CACHE_KEY = 'merchItemsCacheV3';
+const MERCH_CACHE_KEY = 'merchItemsCacheV4';
+const MERCH_CACHE_TTL_MS = 30 * 1000;
 
 function isOwnerAccount(user) {
   const email = String(user?.email || '')
@@ -30,8 +31,11 @@ function readCachedMerchItems() {
     const raw = sessionStorage.getItem(MERCH_CACHE_KEY);
     if (!raw) return null;
     const parsed = JSON.parse(raw);
-    if (!Array.isArray(parsed)) return null;
-    return parsed;
+    if (Array.isArray(parsed)) return parsed; // backward compatibility
+    if (!parsed || typeof parsed !== 'object') return null;
+    if (!Array.isArray(parsed.items)) return null;
+    if (Number(parsed.cachedAt || 0) + MERCH_CACHE_TTL_MS < Date.now()) return null;
+    return parsed.items;
   } catch {
     return null;
   }
@@ -39,20 +43,45 @@ function readCachedMerchItems() {
 
 function writeCachedMerchItems(items) {
   try {
-    sessionStorage.setItem(MERCH_CACHE_KEY, JSON.stringify(items));
+    sessionStorage.setItem(
+      MERCH_CACHE_KEY,
+      JSON.stringify({
+        cachedAt: Date.now(),
+        items
+      })
+    );
   } catch {
     // Ignore storage write errors (private mode/quota/etc.)
   }
 }
 
-async function getMerchItems() {
-  const cachedItems = readCachedMerchItems();
-  if (cachedItems) return cachedItems;
+function clearCachedMerchItems() {
+  try {
+    sessionStorage.removeItem(MERCH_CACHE_KEY);
+  } catch {
+    // Ignore storage cleanup errors.
+  }
+}
+
+async function getMerchItems({ forceRefresh = false } = {}) {
+  if (!forceRefresh) {
+    const cachedItems = readCachedMerchItems();
+    if (cachedItems) return cachedItems;
+  }
 
   const merch = await api('/api/merch');
   const items = Array.isArray(merch.items) ? merch.items : [];
   writeCachedMerchItems(items);
   return items;
+}
+
+function readFileAsDataUrl(file) {
+  return new Promise((resolve, reject) => {
+    const reader = new FileReader();
+    reader.onload = () => resolve(String(reader.result || ''));
+    reader.onerror = () => reject(new Error('Failed to read image file'));
+    reader.readAsDataURL(file);
+  });
 }
 
 function setMessage(el, text, type = '') {
@@ -336,7 +365,7 @@ async function setupMerchPage() {
     });
   }
 
-  const items = await getMerchItems();
+  const items = await getMerchItems({ forceRefresh: true });
   if (items.length === 1) {
     merchGrid.classList.add('single-item');
   }
@@ -368,6 +397,7 @@ async function setupProductPage() {
   const productTitle = document.getElementById('productTitle');
   const productPrice = document.getElementById('productPrice');
   const productImage = document.getElementById('productImage');
+  const productOptions = document.getElementById('productOptions');
   const quantityInput = document.getElementById('productQuantity');
   const venmoBox = document.getElementById('productVenmo');
   const orderButton = document.getElementById('submitProductOrder');
@@ -401,7 +431,7 @@ async function setupProductPage() {
     });
   }
 
-  const items = await getMerchItems();
+  const items = await getMerchItems({ forceRefresh: true });
   const itemIdFromUrl = new URLSearchParams(window.location.search).get('item');
   const item =
     items.find((candidate) => candidate.id === itemIdFromUrl) ||
@@ -419,7 +449,55 @@ async function setupProductPage() {
   productImage.alt = item.name;
   productImage.decoding = 'async';
 
+  let selectedSize = Array.isArray(item.sizes) && item.sizes.length > 0 ? item.sizes[0] : null;
+  let initialsCheckbox = null;
+
+  if (productOptions) {
+    productOptions.innerHTML = '';
+
+    if (Array.isArray(item.sizes) && item.sizes.length > 0) {
+      const sizeSection = document.createElement('section');
+      sizeSection.className = 'product-option-section';
+      sizeSection.innerHTML = `
+        <p class="product-option-label">Select Size</p>
+        <div class="product-option-grid" id="productSizeGrid"></div>
+      `;
+      const sizeGrid = sizeSection.querySelector('#productSizeGrid');
+      item.sizes.forEach((size, index) => {
+        const button = document.createElement('button');
+        button.type = 'button';
+        button.className = `option-btn ${index === 0 ? 'active' : ''}`.trim();
+        button.textContent = size;
+        button.addEventListener('click', () => {
+          selectedSize = size;
+          sizeGrid.querySelectorAll('.option-btn').forEach((candidate) => {
+            candidate.classList.remove('active');
+          });
+          button.classList.add('active');
+        });
+        sizeGrid.appendChild(button);
+      });
+      productOptions.appendChild(sizeSection);
+    }
+
+    if (item.allowInitials) {
+      const initialsRow = document.createElement('label');
+      initialsRow.className = 'initials-row';
+      initialsRow.innerHTML = `
+        <input id="productIncludeInitials" type="checkbox" />
+        Include initials
+      `;
+      initialsCheckbox = initialsRow.querySelector('#productIncludeInitials');
+      productOptions.appendChild(initialsRow);
+    }
+  }
+
   orderButton.addEventListener('click', async () => {
+    if (Array.isArray(item.sizes) && item.sizes.length > 0 && !selectedSize) {
+      setMessage(messageEl, 'Please select a size.', 'error');
+      return;
+    }
+
     setMessage(messageEl, 'Submitting pre-order...');
     orderButton.disabled = true;
     try {
@@ -427,6 +505,8 @@ async function setupProductPage() {
         method: 'POST',
         body: JSON.stringify({
           itemId: item.id,
+          selectedSize,
+          includeInitials: Boolean(initialsCheckbox?.checked),
           quantity: Number(quantityInput.value),
           venmoAgreed: venmoBox.checked
         })
@@ -443,6 +523,7 @@ async function setupProductPage() {
       );
       quantityInput.value = '1';
       venmoBox.checked = false;
+      if (initialsCheckbox) initialsCheckbox.checked = false;
       setTimeout(() => {
         window.location.href = '/merch.html';
       }, 1400);
@@ -460,10 +541,20 @@ async function setupAdminOrdersPage() {
   const fulfilledOrdersTableBody = document.getElementById('fulfilledOrdersTableBody');
   const openOrdersPanel = document.getElementById('openOrdersPanel');
   const fulfilledOrdersPanel = document.getElementById('fulfilledOrdersPanel');
+  const manageProductsPanel = document.getElementById('manageProductsPanel');
   const openOrdersTabBtn = document.getElementById('openOrdersTabBtn');
   const fulfilledOrdersTabBtn = document.getElementById('fulfilledOrdersTabBtn');
+  const manageProductsTabBtn = document.getElementById('manageProductsTabBtn');
   const ordersMessage = document.getElementById('ordersMessage');
   const exportCsvBtn = document.getElementById('exportCsvBtn');
+  const addProductForm = document.getElementById('addProductForm');
+  const productFormMessage = document.getElementById('productFormMessage');
+  const ownerProductsList = document.getElementById('ownerProductsList');
+  const newProductName = document.getElementById('newProductName');
+  const newProductPrice = document.getElementById('newProductPrice');
+  const newProductImage = document.getElementById('newProductImage');
+  const newProductCustomSizes = document.getElementById('newProductCustomSizes');
+  const newProductAllowInitials = document.getElementById('newProductAllowInitials');
 
   let user;
   try {
@@ -509,10 +600,17 @@ async function setupAdminOrdersPage() {
   openOrders.sort(byCreatedAtDesc);
   fulfilledOrders.sort(byFulfilledAtDesc);
 
+  let ownerProducts = [];
   let activeTab = 'open';
 
   function setActiveTab(tab) {
-    activeTab = tab === 'fulfilled' ? 'fulfilled' : 'open';
+    if (tab === 'fulfilled') {
+      activeTab = 'fulfilled';
+    } else if (tab === 'products') {
+      activeTab = 'products';
+    } else {
+      activeTab = 'open';
+    }
 
     if (openOrdersPanel) {
       openOrdersPanel.classList.toggle('hidden', activeTab !== 'open');
@@ -520,12 +618,21 @@ async function setupAdminOrdersPage() {
     if (fulfilledOrdersPanel) {
       fulfilledOrdersPanel.classList.toggle('hidden', activeTab !== 'fulfilled');
     }
+    if (manageProductsPanel) {
+      manageProductsPanel.classList.toggle('hidden', activeTab !== 'products');
+    }
 
     if (openOrdersTabBtn) {
       openOrdersTabBtn.classList.toggle('active', activeTab === 'open');
     }
     if (fulfilledOrdersTabBtn) {
       fulfilledOrdersTabBtn.classList.toggle('active', activeTab === 'fulfilled');
+    }
+    if (manageProductsTabBtn) {
+      manageProductsTabBtn.classList.toggle('active', activeTab === 'products');
+    }
+    if (exportCsvBtn) {
+      exportCsvBtn.disabled = activeTab === 'products';
     }
   }
 
@@ -546,7 +653,7 @@ async function setupAdminOrdersPage() {
 
     if (openOrders.length === 0) {
       const emptyRow = document.createElement('tr');
-      emptyRow.innerHTML = '<td class="order-empty-cell" colspan="9">No open orders.</td>';
+      emptyRow.innerHTML = '<td class="order-empty-cell" colspan="10">No open orders.</td>';
       openOrdersTableBody.appendChild(emptyRow);
       return;
     }
@@ -560,6 +667,7 @@ async function setupAdminOrdersPage() {
         <td>${escapeHtml(order.userInitials || '')}</td>
         <td>${escapeHtml(order.userEmail || '')}</td>
         <td>${escapeHtml(order.itemName || '')}</td>
+        <td>${escapeHtml(order.selectedSize || '')}</td>
         <td>${order.includeInitials ? 'Yes' : 'No'}</td>
         <td>${escapeHtml(order.quantity || '')}</td>
         <td>${order.venmoAgreed ? 'Yes' : 'No'}</td>
@@ -613,7 +721,7 @@ async function setupAdminOrdersPage() {
 
     if (fulfilledOrders.length === 0) {
       const emptyRow = document.createElement('tr');
-      emptyRow.innerHTML = '<td class="order-empty-cell" colspan="9">No fulfilled orders yet.</td>';
+      emptyRow.innerHTML = '<td class="order-empty-cell" colspan="10">No fulfilled orders yet.</td>';
       fulfilledOrdersTableBody.appendChild(emptyRow);
       return;
     }
@@ -629,6 +737,7 @@ async function setupAdminOrdersPage() {
         <td>${escapeHtml(order.userInitials || '')}</td>
         <td>${escapeHtml(order.userEmail || '')}</td>
         <td>${escapeHtml(order.itemName || '')}</td>
+        <td>${escapeHtml(order.selectedSize || '')}</td>
         <td>${order.includeInitials ? 'Yes' : 'No'}</td>
         <td>${escapeHtml(order.quantity || '')}</td>
         <td>${order.venmoAgreed ? 'Yes' : 'No'}</td>
@@ -637,15 +746,67 @@ async function setupAdminOrdersPage() {
     });
   }
 
+  function renderOwnerProducts() {
+    if (!ownerProductsList) return;
+    ownerProductsList.innerHTML = '';
+
+    if (ownerProducts.length === 0) {
+      ownerProductsList.innerHTML = '<p class="message">No products are live yet.</p>';
+      return;
+    }
+
+    ownerProducts
+      .slice()
+      .sort((a, b) => String(b.createdAt || '').localeCompare(String(a.createdAt || '')))
+      .forEach((item) => {
+        const card = document.createElement('article');
+        card.className = 'owner-product-card';
+        const sizesText =
+          Array.isArray(item.sizes) && item.sizes.length > 0 ? item.sizes.join(', ') : 'None';
+        card.innerHTML = `
+          <img src="${escapeHtml(item.image || '')}" alt="${escapeHtml(item.name || 'Product')}" class="owner-product-thumb" loading="lazy" decoding="async" />
+          <div>
+            <h4 class="owner-product-name">${escapeHtml(item.name || '')}</h4>
+            <p class="owner-product-price">${formatCurrency(item.price)}</p>
+            <p class="owner-product-meta">Sizes: ${escapeHtml(sizesText)}</p>
+            <p class="owner-product-meta">Initials Option: ${item.allowInitials ? 'Enabled' : 'Disabled'}</p>
+          </div>
+        `;
+        ownerProductsList.appendChild(card);
+      });
+  }
+
+  async function refreshOwnerProducts() {
+    if (!ownerProductsList) return;
+
+    try {
+      const response = await api('/api/admin/merch');
+      ownerProducts = Array.isArray(response.items) ? response.items : [];
+      renderOwnerProducts();
+    } catch (err) {
+      ownerProductsList.innerHTML = `<p class="message error">${escapeHtml(err.message)}</p>`;
+    }
+  }
+
   if (openOrdersTabBtn) {
     openOrdersTabBtn.addEventListener('click', () => setActiveTab('open'));
   }
   if (fulfilledOrdersTabBtn) {
     fulfilledOrdersTabBtn.addEventListener('click', () => setActiveTab('fulfilled'));
   }
+  if (manageProductsTabBtn) {
+    manageProductsTabBtn.addEventListener('click', () => {
+      setActiveTab('products');
+      setMessage(ordersMessage, '');
+    });
+  }
 
   if (exportCsvBtn) {
     exportCsvBtn.addEventListener('click', () => {
+      if (activeTab === 'products') {
+        setMessage(ordersMessage, 'CSV export is available for order tabs only.', 'error');
+        return;
+      }
       if (activeTab === 'open') {
         const rows = openOrders.map((order) => [
           order.createdAt || '',
@@ -653,6 +814,7 @@ async function setupAdminOrdersPage() {
           order.userInitials || '',
           order.userEmail || '',
           order.itemName || '',
+          order.selectedSize || '',
           order.includeInitials ? 'Yes' : 'No',
           order.quantity || '',
           order.venmoAgreed ? 'Yes' : 'No',
@@ -669,6 +831,7 @@ async function setupAdminOrdersPage() {
             'userInitials',
             'userEmail',
             'itemName',
+            'selectedSize',
             'includeInitials',
             'quantity',
             'venmoAgreed',
@@ -689,6 +852,7 @@ async function setupAdminOrdersPage() {
           order.userInitials || '',
           order.userEmail || '',
           order.itemName || '',
+          order.selectedSize || '',
           order.includeInitials ? 'Yes' : 'No',
           order.quantity || '',
           order.venmoAgreed ? 'Yes' : 'No',
@@ -707,6 +871,7 @@ async function setupAdminOrdersPage() {
             'userInitials',
             'userEmail',
             'itemName',
+            'selectedSize',
             'includeInitials',
             'quantity',
             'venmoAgreed',
@@ -722,8 +887,78 @@ async function setupAdminOrdersPage() {
     });
   }
 
+  if (
+    addProductForm &&
+    newProductName &&
+    newProductPrice &&
+    newProductImage &&
+    newProductCustomSizes &&
+    newProductAllowInitials
+  ) {
+    addProductForm.addEventListener('submit', async (event) => {
+      event.preventDefault();
+
+      const name = String(newProductName.value || '').trim();
+      const price = Number(newProductPrice.value || '');
+      const imageFile = newProductImage.files?.[0] || null;
+
+      const checkedSizes = Array.from(
+        addProductForm.querySelectorAll('input[name="sizeOption"]:checked')
+      ).map((input) => String(input.value || '').trim());
+      const customSizes = String(newProductCustomSizes.value || '')
+        .split(',')
+        .map((value) => value.trim())
+        .filter(Boolean);
+      const sizes = Array.from(new Set([...checkedSizes, ...customSizes].map((value) => value.toUpperCase())));
+
+      if (!name) {
+        setMessage(productFormMessage, 'Product name is required.', 'error');
+        return;
+      }
+      if (!Number.isFinite(price) || price <= 0) {
+        setMessage(productFormMessage, 'Valid product price is required.', 'error');
+        return;
+      }
+      if (!imageFile) {
+        setMessage(productFormMessage, 'Please choose a PNG image.', 'error');
+        return;
+      }
+      const isPngFile =
+        String(imageFile.type || '').toLowerCase() === 'image/png' ||
+        String(imageFile.name || '').toLowerCase().endsWith('.png');
+      if (!isPngFile) {
+        setMessage(productFormMessage, 'Image must be a PNG file.', 'error');
+        return;
+      }
+
+      setMessage(productFormMessage, 'Publishing product...');
+
+      try {
+        const imageDataUrl = await readFileAsDataUrl(imageFile);
+        await api('/api/admin/merch', {
+          method: 'POST',
+          body: JSON.stringify({
+            name,
+            price,
+            imageDataUrl,
+            sizes,
+            allowInitials: Boolean(newProductAllowInitials.checked)
+          })
+        });
+
+        clearCachedMerchItems();
+        addProductForm.reset();
+        await refreshOwnerProducts();
+        setMessage(productFormMessage, 'Product published and live on shop.', 'success');
+      } catch (err) {
+        setMessage(productFormMessage, err.message, 'error');
+      }
+    });
+  }
+
   renderOpenOrdersTable();
   renderFulfilledOrdersTable();
+  await refreshOwnerProducts();
   updateSummaryMessage();
   setActiveTab(openOrders.length > 0 || fulfilledOrders.length === 0 ? 'open' : 'fulfilled');
 }

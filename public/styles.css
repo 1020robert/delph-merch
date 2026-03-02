@@ -616,6 +616,95 @@ input {
   margin-top: 12px;
 }
 
+.manage-products-grid {
+  margin-top: 12px;
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 14px;
+}
+
+.manage-products-title {
+  margin: 0 0 10px;
+}
+
+.manage-products-form {
+  display: grid;
+  gap: 12px;
+}
+
+.size-fieldset {
+  border: 1px solid #e0c684;
+  border-radius: 12px;
+  padding: 10px 12px;
+  margin: 0;
+}
+
+.size-fieldset legend {
+  font-weight: 700;
+  padding: 0 6px;
+  color: #12365a;
+}
+
+.size-checkbox-grid {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 8px;
+}
+
+.size-checkbox-grid label {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  font-weight: 600;
+}
+
+.size-checkbox-grid input[type="checkbox"] {
+  width: 16px;
+  height: 16px;
+  margin: 0;
+  accent-color: #0a3f9e;
+}
+
+.owner-products-list {
+  display: grid;
+  gap: 10px;
+}
+
+.owner-product-card {
+  display: grid;
+  grid-template-columns: 84px minmax(0, 1fr);
+  gap: 10px;
+  border: 1px solid #dfc57f;
+  border-radius: 12px;
+  background: #fff;
+  padding: 10px;
+}
+
+.owner-product-thumb {
+  width: 84px;
+  height: 84px;
+  border-radius: 10px;
+  object-fit: cover;
+  background: #eef3f8;
+}
+
+.owner-product-name {
+  margin: 0;
+  font-size: 1.05rem;
+}
+
+.owner-product-price {
+  margin: 2px 0 0;
+  font-weight: 700;
+  color: #0a3f9e;
+}
+
+.owner-product-meta {
+  margin: 4px 0 0;
+  font-size: 0.9rem;
+  color: #254a73;
+}
+
 .order-action-btn {
   border: 1px solid #0a3f9e;
   background: #0a3f9e;
@@ -684,7 +773,7 @@ input {
   .orders-tabs {
     width: 100%;
     display: grid;
-    grid-template-columns: repeat(2, minmax(0, 1fr));
+    grid-template-columns: repeat(3, minmax(0, 1fr));
   }
 
   .orders-tab {
@@ -765,6 +854,10 @@ input {
   .merch-body:not(.product-body) .catalog-photo-wrap {
     border-radius: 18px;
     padding: 0;
+  }
+
+  .manage-products-grid {
+    grid-template-columns: 1fr;
   }
 }
 

@@ -15,28 +15,33 @@ const SHARED_LOGIN_PASSWORD = String(process.env.LOGIN_PASSWORD || '').trim();
 const DATA_DIR = process.env.DATA_DIR
   ? path.resolve(process.env.DATA_DIR)
   : path.join(__dirname, 'data');
+const UPLOADS_DIR = path.join(DATA_DIR, 'uploads');
 const COOKIE_SECURE =
   String(process.env.COOKIE_SECURE || process.env.NODE_ENV === 'production').toLowerCase() ===
   'true';
 
 const USERS_PATH = path.join(DATA_DIR, 'users.json');
 const ORDERS_PATH = path.join(DATA_DIR, 'orders.json');
+const MERCH_ITEMS_PATH = path.join(DATA_DIR, 'merch-items.json');
 
 const SESSION_COOKIE = 'club_session';
 const sessions = new Map();
 const ensuredDataFiles = new Set();
 
-const MERCH_ITEMS = [
+const DEFAULT_MERCH_ITEMS = [
   {
     id: 'torch-hat',
     name: "'47 Delph Hat",
     price: 25,
-    image: '/hat2.png'
+    image: '/hat2.png',
+    sizes: [],
+    allowInitials: false,
+    createdAt: '2026-02-26T00:00:00.000Z'
   }
 ];
 
 app.disable('x-powered-by');
-app.use(express.json());
+app.use(express.json({ limit: '8mb' }));
 app.use(cookieParser());
 app.use(
   express.static(path.join(__dirname, 'public'), {
@@ -54,6 +59,21 @@ app.use(
     }
   })
 );
+
+app.get('/uploads/:filename', (req, res) => {
+  const filename = String(req.params.filename || '').trim();
+  if (!/^[A-Za-z0-9._-]+$/.test(filename)) {
+    return res.status(400).send('Invalid filename');
+  }
+
+  const absolutePath = path.join(UPLOADS_DIR, filename);
+  if (!fs.existsSync(absolutePath)) {
+    return res.status(404).send('Not found');
+  }
+
+  res.setHeader('Cache-Control', 'public, max-age=604800');
+  return res.sendFile(absolutePath);
+});
 
 function ensureDataFile(filePath) {
   if (ensuredDataFiles.has(filePath)) return;
@@ -77,6 +97,68 @@ function readJsonArray(filePath) {
 
 function writeJsonArray(filePath, data) {
   fs.writeFileSync(filePath, JSON.stringify(data, null, 2), 'utf8');
+}
+
+function normalizePrice(value) {
+  const amount = Number(value);
+  if (!Number.isFinite(amount)) return null;
+  if (amount <= 0 || amount > 10000) return null;
+  return Math.round(amount * 100) / 100;
+}
+
+function normalizeSizes(values) {
+  if (!Array.isArray(values)) return [];
+  const seen = new Set();
+  const output = [];
+  for (const value of values) {
+    const normalized = String(value || '')
+      .trim()
+      .toUpperCase();
+    if (!normalized) continue;
+    if (normalized.length > 12) continue;
+    if (seen.has(normalized)) continue;
+    seen.add(normalized);
+    output.push(normalized);
+    if (output.length >= 12) break;
+  }
+  return output;
+}
+
+function normalizeMerchItem(candidate) {
+  if (!candidate || typeof candidate !== 'object') return null;
+
+  const id = String(candidate.id || '').trim();
+  const name = String(candidate.name || '').trim();
+  const image = String(candidate.image || '').trim();
+  const price = normalizePrice(candidate.price);
+  if (!id || !name || !image || price === null) return null;
+
+  return {
+    id,
+    name,
+    price,
+    image,
+    sizes: normalizeSizes(candidate.sizes),
+    allowInitials: Boolean(candidate.allowInitials),
+    createdAt: candidate.createdAt || new Date().toISOString()
+  };
+}
+
+function readMerchItems() {
+  const rawItems = readJsonArray(MERCH_ITEMS_PATH);
+  const normalized = rawItems.map(normalizeMerchItem).filter(Boolean);
+
+  if (normalized.length > 0) {
+    return normalized;
+  }
+
+  const seeded = DEFAULT_MERCH_ITEMS.map((item) => ({ ...item }));
+  writeJsonArray(MERCH_ITEMS_PATH, seeded);
+  return seeded;
+}
+
+function writeMerchItems(items) {
+  writeJsonArray(MERCH_ITEMS_PATH, items);
 }
 
 function signValue(raw) {
@@ -238,6 +320,8 @@ async function maybeSendOrderEmail(order, user, item) {
     `Name: ${user.name}`,
     `Email: ${user.email}`,
     `Item: ${item.name}`,
+    `Size: ${order.selectedSize || 'N/A'}`,
+    `Include Initials: ${order.includeInitials ? 'Yes' : 'No'}`,
     `Quantity: ${order.quantity}`,
     `Venmo Agreed: ${order.venmoAgreed ? 'Yes' : 'No'}`,
     `Ordered At: ${order.createdAt}`,
@@ -252,6 +336,27 @@ async function maybeSendOrderEmail(order, user, item) {
   });
 
   return { emailed: true };
+}
+
+function saveUploadedPngDataUrl(imageDataUrl, itemId) {
+  const match = /^data:image\/png;base64,([A-Za-z0-9+/=]+)$/.exec(String(imageDataUrl || '').trim());
+  if (!match) {
+    return { error: 'Image must be a PNG upload' };
+  }
+
+  const imageBuffer = Buffer.from(match[1], 'base64');
+  if (imageBuffer.length === 0) {
+    return { error: 'Uploaded image is empty' };
+  }
+  if (imageBuffer.length > 5 * 1024 * 1024) {
+    return { error: 'Uploaded image must be under 5MB' };
+  }
+
+  fs.mkdirSync(UPLOADS_DIR, { recursive: true });
+  const filename = `${itemId}-${crypto.randomBytes(3).toString('hex')}.png`;
+  const filePath = path.join(UPLOADS_DIR, filename);
+  fs.writeFileSync(filePath, imageBuffer);
+  return { imagePath: `/uploads/${filename}` };
 }
 
 app.get('/api/config', (_req, res) => {
@@ -402,7 +507,50 @@ app.get('/api/auth/me', (req, res) => {
 });
 
 app.get('/api/merch', authRequired, (_req, res) => {
-  return res.json({ items: MERCH_ITEMS });
+  return res.json({ items: readMerchItems() });
+});
+
+app.get('/api/admin/merch', authRequired, ownerRequired, (_req, res) => {
+  return res.json({ items: readMerchItems() });
+});
+
+app.post('/api/admin/merch', authRequired, ownerRequired, (req, res) => {
+  const name = String(req.body?.name || '').trim();
+  const price = normalizePrice(req.body?.price);
+  const imageDataUrl = String(req.body?.imageDataUrl || '').trim();
+  const sizes = normalizeSizes(req.body?.sizes);
+  const allowInitials = Boolean(req.body?.allowInitials);
+
+  if (!name) {
+    return res.status(400).json({ error: 'Product name is required' });
+  }
+  if (price === null) {
+    return res.status(400).json({ error: 'Valid price is required' });
+  }
+  if (!imageDataUrl) {
+    return res.status(400).json({ error: 'PNG image is required' });
+  }
+
+  const itemId = `item-${Date.now()}-${crypto.randomBytes(2).toString('hex')}`;
+  const uploadResult = saveUploadedPngDataUrl(imageDataUrl, itemId);
+  if (uploadResult.error) {
+    return res.status(400).json({ error: uploadResult.error });
+  }
+
+  const items = readMerchItems();
+  const item = {
+    id: itemId,
+    name,
+    price,
+    image: uploadResult.imagePath,
+    sizes,
+    allowInitials,
+    createdAt: new Date().toISOString()
+  };
+  items.push(item);
+  writeMerchItems(items);
+
+  return res.json({ success: true, item, items });
 });
 
 app.get('/api/admin/orders', authRequired, ownerRequired, (_req, res) => {
@@ -414,6 +562,8 @@ app.get('/api/admin/orders', authRequired, ownerRequired, (_req, res) => {
     const user = usersById.get(order.userId);
     return {
       ...order,
+      selectedSize: order.selectedSize || null,
+      includeInitials: Boolean(order.includeInitials),
       userInitials: order.userInitials || user?.initials || '',
       fulfilled: Boolean(order.fulfilled),
       fulfilledAt: order.fulfilledAt || null,
@@ -444,6 +594,8 @@ app.get('/api/orders', authRequired, ownerRequired, (_req, res) => {
       const user = usersById.get(order.userId);
       return {
         ...order,
+        selectedSize: order.selectedSize || null,
+        includeInitials: Boolean(order.includeInitials),
         userInitials: order.userInitials || user?.initials || '',
         fulfilled: Boolean(order.fulfilled),
         fulfilledAt: order.fulfilledAt || null,
@@ -494,6 +646,10 @@ app.post('/api/admin/orders/:orderId/fulfill', authRequired, ownerRequired, (req
 
 app.post('/api/orders', authRequired, async (req, res) => {
   const { itemId, quantity, venmoAgreed } = req.body || {};
+  const selectedSizeRaw = String(req.body?.selectedSize || '')
+    .trim()
+    .toUpperCase();
+  const includeInitialsRequested = Boolean(req.body?.includeInitials);
   const qty = Number(quantity);
 
   if (!itemId || Number.isNaN(qty)) {
@@ -508,16 +664,30 @@ app.post('/api/orders', authRequired, async (req, res) => {
     return res.status(400).json({ error: 'You must agree to pay via Venmo' });
   }
 
-  const item = MERCH_ITEMS.find((x) => x.id === itemId);
+  const item = readMerchItems().find((x) => x.id === itemId);
   if (!item) {
     return res.status(404).json({ error: 'Merch item not found' });
   }
+
+  let selectedSize = null;
+  if (item.sizes.length > 0) {
+    if (!selectedSizeRaw) {
+      return res.status(400).json({ error: 'Please select a size' });
+    }
+    if (!item.sizes.includes(selectedSizeRaw)) {
+      return res.status(400).json({ error: 'Selected size is not valid for this item' });
+    }
+    selectedSize = selectedSizeRaw;
+  }
+
+  const includeInitials = item.allowInitials ? includeInitialsRequested : false;
 
   const order = {
     id: crypto.randomUUID(),
     itemId: item.id,
     itemName: item.name,
-    includeInitials: false,
+    includeInitials,
+    selectedSize,
     quantity: qty,
     venmoAgreed: Boolean(venmoAgreed),
     userId: req.user.id,

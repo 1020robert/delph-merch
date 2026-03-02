@@ -390,7 +390,38 @@ app.post('/api/auth/register', (req, res) => {
     (candidate) => String(candidate.email || '').trim().toLowerCase() === normalizedEmail
   );
   if (existingUser) {
-    return res.status(409).json({ error: 'Account already exists. Sign in instead.' });
+    let changed = false;
+
+    if (String(existingUser.firstName || '').trim() !== normalizedFirstName) {
+      existingUser.firstName = normalizedFirstName;
+      changed = true;
+    }
+    if (String(existingUser.lastName || '').trim() !== normalizedLastName) {
+      existingUser.lastName = normalizedLastName;
+      changed = true;
+    }
+    if (String(existingUser.initials || '').trim().toUpperCase() !== normalizedInitials) {
+      existingUser.initials = normalizedInitials;
+      changed = true;
+    }
+
+    const computedName = `${normalizedFirstName} ${normalizedLastName}`.trim();
+    if (computedName && String(existingUser.name || '').trim() !== computedName) {
+      existingUser.name = computedName;
+      changed = true;
+    }
+
+    if (changed) {
+      writeJsonArray(USERS_PATH, users);
+    }
+
+    setSessionCookie(res, existingUser.id, false);
+    return res.json({
+      registered: false,
+      existingAccount: true,
+      passwordRequired: true,
+      user: userPublicShape(existingUser)
+    });
   }
 
   const user = {

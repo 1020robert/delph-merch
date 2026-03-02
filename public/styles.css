@@ -807,6 +807,13 @@ input {
   }
 
   .merch-body:not(.product-body) {
+    background-image:
+      linear-gradient(180deg, rgba(218, 231, 250, 0.92) 0%, rgba(196, 214, 243, 0.94) 46%, rgba(212, 227, 248, 0.93) 100%),
+      radial-gradient(circle at 50% -6%, rgba(199, 161, 70, 0.26) 0%, rgba(199, 161, 70, 0) 58%),
+      url("/moose-bg.jpg");
+    background-repeat: no-repeat, no-repeat, no-repeat;
+    background-position: center, center, center 18%;
+    background-size: 100% 100%, 100% 100%, 170% auto;
     background-attachment: scroll;
   }
 
@@ -888,6 +895,11 @@ input {
 }
 
 @media (max-width: 520px) {
+  .merch-body:not(.product-body) {
+    background-position: center, center, center 14%;
+    background-size: 100% 100%, 100% 100%, 210% auto;
+  }
+
   .merch-body:not(.product-body) .merch-topbar {
     grid-template-columns: 54px minmax(0, 1fr) auto;
     min-height: 156px;

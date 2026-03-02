@@ -272,6 +272,23 @@ async function setupAuthPage() {
       }
       continueToMerchPage();
     } catch (err) {
+      if (err.status === 409) {
+        try {
+          const fallbackLogin = await api('/api/auth/login', {
+            method: 'POST',
+            body: JSON.stringify({ email: payload.email })
+          });
+          if (fallbackLogin.passwordRequired) {
+            showPasswordStep();
+            return;
+          }
+          continueToMerchPage();
+          return;
+        } catch (fallbackErr) {
+          setMessage(emailMessageEl, fallbackErr.message, 'error');
+          return;
+        }
+      }
       setMessage(emailMessageEl, err.message, 'error');
     }
   });

@@ -396,10 +396,8 @@ app.post('/api/auth/register', (req, res) => {
   const normalizedLastName = String(req.body?.lastName || '').trim();
   const normalizedInitials = normalizeInitials(req.body?.initials);
 
-  if (!normalizedEmail || !normalizedFirstName || !normalizedLastName || !normalizedInitials) {
-    return res.status(400).json({
-      error: 'email, firstName, lastName, and initials are required'
-    });
+  if (!normalizedEmail) {
+    return res.status(400).json({ error: 'email is required' });
   }
 
   const users = readJsonArray(USERS_PATH);
@@ -409,20 +407,23 @@ app.post('/api/auth/register', (req, res) => {
   if (existingUser) {
     let changed = false;
 
-    if (String(existingUser.firstName || '').trim() !== normalizedFirstName) {
+    if (normalizedFirstName && String(existingUser.firstName || '').trim() !== normalizedFirstName) {
       existingUser.firstName = normalizedFirstName;
       changed = true;
     }
-    if (String(existingUser.lastName || '').trim() !== normalizedLastName) {
+    if (normalizedLastName && String(existingUser.lastName || '').trim() !== normalizedLastName) {
       existingUser.lastName = normalizedLastName;
       changed = true;
     }
-    if (String(existingUser.initials || '').trim().toUpperCase() !== normalizedInitials) {
+    if (
+      normalizedInitials &&
+      String(existingUser.initials || '').trim().toUpperCase() !== normalizedInitials
+    ) {
       existingUser.initials = normalizedInitials;
       changed = true;
     }
 
-    const computedName = `${normalizedFirstName} ${normalizedLastName}`.trim();
+    const computedName = `${normalizedFirstName || existingUser.firstName || ''} ${normalizedLastName || existingUser.lastName || ''}`.trim();
     if (computedName && String(existingUser.name || '').trim() !== computedName) {
       existingUser.name = computedName;
       changed = true;
@@ -438,6 +439,12 @@ app.post('/api/auth/register', (req, res) => {
       existingAccount: true,
       passwordRequired: true,
       user: userPublicShape(existingUser)
+    });
+  }
+
+  if (!normalizedFirstName || !normalizedLastName || !normalizedInitials) {
+    return res.status(400).json({
+      error: 'email, firstName, lastName, and initials are required'
     });
   }
 

@@ -12,6 +12,7 @@ const PORT = Number(process.env.PORT) || 3000;
 const OWNER_EMAIL = '1020rjl@gmail.com';
 const SESSION_SECRET = process.env.SESSION_SECRET || 'dev-secret-change-me';
 const SHARED_LOGIN_PASSWORD = String(process.env.LOGIN_PASSWORD || '').trim();
+const PASSWORD_GATE_ENABLED = false;
 const DATA_DIR = process.env.DATA_DIR
   ? path.resolve(process.env.DATA_DIR)
   : path.join(__dirname, 'data');
@@ -188,7 +189,11 @@ function signValue(raw) {
   return crypto.createHmac('sha256', SESSION_SECRET).update(raw).digest('hex');
 }
 
-function createSession(userId, passwordVerified = false) {
+function isPasswordVerificationRequired(session) {
+  return PASSWORD_GATE_ENABLED && !session?.passwordVerified;
+}
+
+function createSession(userId, passwordVerified = !PASSWORD_GATE_ENABLED) {
   const raw = `${userId}:${Date.now()}:${crypto.randomBytes(24).toString('hex')}`;
   const signature = signValue(raw);
   const token = Buffer.from(`${raw}:${signature}`).toString('base64url');
@@ -196,7 +201,7 @@ function createSession(userId, passwordVerified = false) {
   return token;
 }
 
-function setSessionCookie(res, userId, passwordVerified = false) {
+function setSessionCookie(res, userId, passwordVerified = !PASSWORD_GATE_ENABLED) {
   const token = createSession(userId, passwordVerified);
   res.cookie(SESSION_COOKIE, token, {
     httpOnly: true,
@@ -298,7 +303,7 @@ function authRequired(req, res, next) {
   if (!context) {
     return res.status(401).json({ error: 'Not signed in' });
   }
-  if (!context.session.passwordVerified) {
+  if (isPasswordVerificationRequired(context.session)) {
     return res.status(403).json({ error: 'Password verification required', passwordRequired: true });
   }
   req.user = context.user;
@@ -330,6 +335,10 @@ function buildTransport() {
   });
 }
 
+function wait(ms) {
+  return new Promise((resolve) => setTimeout(resolve, ms));
+}
+
 async function maybeSendOrderEmail(order, user, item) {
   const transport = buildTransport();
   if (!transport) {
@@ -353,14 +362,31 @@ async function maybeSendOrderEmail(order, user, item) {
     `Order ID: ${order.id}`
   ].join('\n');
 
-  await transport.sendMail({
+  const mailOptions = {
     from: process.env.SMTP_USER,
     to: OWNER_EMAIL,
     subject,
     text: body
-  });
+  };
 
-  return { emailed: true };
+  let lastError = null;
+  for (let attempt = 1; attempt <= 2; attempt += 1) {
+    try {
+      await transport.sendMail(mailOptions);
+      return { emailed: true };
+    } catch (err) {
+      lastError = err;
+      if (attempt < 2) {
+        await wait(500);
+      }
+    }
+  }
+
+  return {
+    emailed: false,
+    reason: 'Owner notification unavailable',
+    error: lastError ? String(lastError.message || lastError) : 'Unknown email error'
+  };
 }
 
 function saveUploadedPngDataUrl(imageDataUrl, itemId) {
@@ -433,11 +459,11 @@ app.post('/api/auth/register', (req, res) => {
       writeJsonArray(USERS_PATH, users);
     }
 
-    setSessionCookie(res, existingUser.id, false);
+    setSessionCookie(res, existingUser.id);
     return res.json({
       registered: false,
       existingAccount: true,
-      passwordRequired: true,
+      passwordRequired: PASSWORD_GATE_ENABLED,
       user: userPublicShape(existingUser)
     });
   }
@@ -465,10 +491,10 @@ app.post('/api/auth/register', (req, res) => {
   users.push(user);
   writeJsonArray(USERS_PATH, users);
 
-  setSessionCookie(res, user.id, false);
+  setSessionCookie(res, user.id);
   return res.json({
     registered: true,
-    passwordRequired: true,
+    passwordRequired: PASSWORD_GATE_ENABLED,
     user: userPublicShape(user)
   });
 });
@@ -516,10 +542,10 @@ app.post('/api/auth/login', (req, res) => {
     writeJsonArray(USERS_PATH, users);
   }
 
-  setSessionCookie(res, user.id, false);
+  setSessionCookie(res, user.id);
   return res.json({
     signedIn: true,
-    passwordRequired: true,
+    passwordRequired: PASSWORD_GATE_ENABLED,
     user: userPublicShape(user)
   });
 });
@@ -528,6 +554,14 @@ app.post('/api/auth/verify-password', (req, res) => {
   const context = getAuthContext(req);
   if (!context) {
     return res.status(401).json({ error: 'Sign in first' });
+  }
+  if (!PASSWORD_GATE_ENABLED) {
+    context.session.passwordVerified = true;
+    context.session.passwordVerifiedAt = new Date().toISOString();
+    return res.json({
+      success: true,
+      user: userPublicShape(context.user)
+    });
   }
   if (!SHARED_LOGIN_PASSWORD) {
     return res
@@ -565,7 +599,7 @@ app.get('/api/auth/me', (req, res) => {
 
   return res.json({
     user: userPublicShape(context.user),
-    passwordRequired: !context.session.passwordVerified
+    passwordRequired: isPasswordVerificationRequired(context.session)
   });
 });
 
@@ -879,7 +913,15 @@ app.post('/api/orders', authRequired, async (req, res) => {
   try {
     emailStatus = await maybeSendOrderEmail(order, req.user, item);
   } catch (err) {
-    emailStatus = { emailed: false, reason: `Email failed: ${err.message}` };
+    emailStatus = { emailed: false, reason: 'Owner notification unavailable', error: err.message };
+  }
+
+  if (!emailStatus.emailed) {
+    console.error('Order notification email failed', {
+      orderId: order.id,
+      reason: emailStatus.reason,
+      error: emailStatus.error || null
+    });
   }
 
   return res.json({

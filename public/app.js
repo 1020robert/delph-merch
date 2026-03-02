@@ -137,30 +137,14 @@ async function setupAuthPage() {
   const authPanel = document.getElementById('emailAuthPanel');
   if (!authPanel) return;
 
-  const emailStep = document.getElementById('emailStep');
-  const passwordStep = document.getElementById('passwordStep');
   const authTitle = document.getElementById('authTitle');
   const authCopy = document.getElementById('authCopy');
   const emailMessageEl = document.getElementById('authMessage');
-  const passwordMessageEl = document.getElementById('passwordMessage');
   const loginForm = document.getElementById('loginForm');
   const registerForm = document.getElementById('registerForm');
   const showRegisterBtn = document.getElementById('showRegisterBtn');
   const showLoginBtn = document.getElementById('showLoginBtn');
-  const passwordGateForm = document.getElementById('passwordGateForm');
-  const passwordBackBtn = document.getElementById('passwordBackBtn');
-  if (
-    !emailStep ||
-    !passwordStep ||
-    !authTitle ||
-    !authCopy ||
-    !loginForm ||
-    !registerForm ||
-    !showRegisterBtn ||
-    !showLoginBtn ||
-    !passwordGateForm ||
-    !passwordBackBtn
-  ) {
+  if (!authTitle || !authCopy || !loginForm || !registerForm || !showRegisterBtn || !showLoginBtn) {
     return;
   }
 
@@ -174,27 +158,10 @@ async function setupAuthPage() {
 
   function showRegisterForm() {
     authTitle.textContent = 'Create Account';
-    authCopy.textContent = 'Create your account, then continue to password verification.';
+    authCopy.textContent = 'Create your account to access the merch page.';
     registerForm.classList.remove('hidden');
     loginForm.classList.add('hidden');
     setMessage(emailMessageEl, '');
-  }
-
-  function showEmailStep() {
-    emailStep.classList.remove('hidden');
-    passwordStep.classList.add('hidden');
-    setMessage(passwordMessageEl, '');
-  }
-
-  function showPasswordStep() {
-    emailStep.classList.add('hidden');
-    passwordStep.classList.remove('hidden');
-    setMessage(emailMessageEl, '');
-    setMessage(passwordMessageEl, '');
-    if (passwordGateForm.elements.password) {
-      passwordGateForm.elements.password.value = '';
-      passwordGateForm.elements.password.focus();
-    }
   }
 
   function continueToMerchPage() {
@@ -203,18 +170,13 @@ async function setupAuthPage() {
   }
 
   try {
-    const me = await api('/api/auth/me');
-    if (me.passwordRequired) {
-      showPasswordStep();
-      return;
-    }
+    await api('/api/auth/me');
     continueToMerchPage();
     return;
   } catch {
     // No active session.
   }
 
-  showEmailStep();
   showLoginForm();
 
   showRegisterBtn.addEventListener('click', () => {
@@ -235,14 +197,10 @@ async function setupAuthPage() {
     setMessage(emailMessageEl, 'Signing in...');
 
     try {
-      const data = await api('/api/auth/login', {
+      await api('/api/auth/login', {
         method: 'POST',
         body: JSON.stringify(payload)
       });
-      if (data.passwordRequired) {
-        showPasswordStep();
-        return;
-      }
       continueToMerchPage();
     } catch (err) {
       setMessage(emailMessageEl, err.message, 'error');
@@ -262,26 +220,18 @@ async function setupAuthPage() {
     setMessage(emailMessageEl, 'Creating account...');
 
     try {
-      const data = await api('/api/auth/register', {
+      await api('/api/auth/register', {
         method: 'POST',
         body: JSON.stringify(payload)
       });
-      if (data.passwordRequired) {
-        showPasswordStep();
-        return;
-      }
       continueToMerchPage();
     } catch (err) {
       if (err.status === 409) {
         try {
-          const fallbackLogin = await api('/api/auth/login', {
+          await api('/api/auth/login', {
             method: 'POST',
             body: JSON.stringify({ email: payload.email })
           });
-          if (fallbackLogin.passwordRequired) {
-            showPasswordStep();
-            return;
-          }
           continueToMerchPage();
           return;
         } catch (fallbackErr) {
@@ -291,46 +241,6 @@ async function setupAuthPage() {
       }
       setMessage(emailMessageEl, err.message, 'error');
     }
-  });
-
-  passwordGateForm.addEventListener('submit', async (event) => {
-    event.preventDefault();
-
-    const payload = {
-      password: passwordGateForm.elements.password.value
-    };
-
-    setMessage(passwordMessageEl, 'Verifying password...');
-
-    try {
-      await api('/api/auth/verify-password', {
-        method: 'POST',
-        body: JSON.stringify(payload)
-      });
-      continueToMerchPage();
-    } catch (err) {
-      if (err.status === 503) {
-        setMessage(
-          passwordMessageEl,
-          'Password verification is unavailable right now. Owner must configure LOGIN_PASSWORD.',
-          'error'
-        );
-        return;
-      }
-      setMessage(passwordMessageEl, err.message, 'error');
-    }
-  });
-
-  passwordBackBtn.addEventListener('click', async () => {
-    try {
-      await api('/api/auth/logout', { method: 'POST' });
-    } catch {
-      // Ignore and reset local view state.
-    }
-    showEmailStep();
-    showLoginForm();
-    loginForm.reset();
-    registerForm.reset();
   });
 }
 
@@ -550,9 +460,9 @@ async function setupProductPage() {
         })
       });
 
-      const emailInfo = data.emailStatus.emailed
-        ? ' Order email sent.'
-        : ` Order saved. (${data.emailStatus.reason})`;
+      const emailInfo = data.emailStatus?.emailed
+        ? ' Owner notification sent.'
+        : ' Order is saved and visible in owner dashboard.';
 
       setMessage(
         messageEl,

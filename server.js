@@ -909,25 +909,31 @@ app.post('/api/orders', authRequired, async (req, res) => {
   orders.push(order);
   writeJsonArray(ORDERS_PATH, orders);
 
-  let emailStatus = { emailed: false, reason: 'Email not attempted' };
-  try {
-    emailStatus = await maybeSendOrderEmail(order, req.user, item);
-  } catch (err) {
-    emailStatus = { emailed: false, reason: 'Owner notification unavailable', error: err.message };
-  }
-
-  if (!emailStatus.emailed) {
-    console.error('Order notification email failed', {
-      orderId: order.id,
-      reason: emailStatus.reason,
-      error: emailStatus.error || null
-    });
-  }
+  // Send owner notification after response so checkout stays fast.
+  setImmediate(() => {
+    maybeSendOrderEmail(order, req.user, item)
+      .then((emailStatus) => {
+        if (!emailStatus.emailed) {
+          console.error('Order notification email failed', {
+            orderId: order.id,
+            reason: emailStatus.reason,
+            error: emailStatus.error || null
+          });
+        }
+      })
+      .catch((err) => {
+        console.error('Order notification email threw error', {
+          orderId: order.id,
+          reason: 'Owner notification unavailable',
+          error: err.message || String(err)
+        });
+      });
+  });
 
   return res.json({
     success: true,
     order,
-    emailStatus
+    emailStatus: { queued: true }
   });
 });
 

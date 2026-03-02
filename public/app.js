@@ -460,13 +460,9 @@ async function setupProductPage() {
         })
       });
 
-      const emailInfo = data.emailStatus?.emailed
-        ? ' Owner notification sent.'
-        : ' Order is saved and visible in owner dashboard.';
-
       setMessage(
         messageEl,
-        `Pre-order received for ${data.order.quantity} x ${item.name}.${emailInfo} Returning to merch page...`,
+        `Pre-order received for ${data.order.quantity} x ${item.name}. Returning to merch page...`,
         'success'
       );
       quantityInput.value = '1';
@@ -474,7 +470,7 @@ async function setupProductPage() {
       if (initialsCheckbox) initialsCheckbox.checked = false;
       setTimeout(() => {
         window.location.href = '/merch.html';
-      }, 1400);
+      }, 500);
     } catch (err) {
       setMessage(messageEl, err.message, 'error');
       orderButton.disabled = false;

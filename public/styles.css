@@ -726,9 +726,19 @@ input {
   accent-color: #0a3f9e;
 }
 
-.owner-pause-btn {
+.owner-price-row {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  gap: 8px;
+  align-items: center;
+}
+
+.owner-price-row input {
+  min-width: 0;
+}
+
+.owner-delete-btn {
   width: fit-content;
-  margin-top: 4px;
 }
 
 .order-action-btn {

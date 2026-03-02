@@ -37,6 +37,7 @@ const DEFAULT_MERCH_ITEMS = [
     sizes: [],
     allowInitials: false,
     paused: false,
+    twoXlPrice: null,
     createdAt: '2026-02-26T00:00:00.000Z'
   }
 ];
@@ -109,6 +110,13 @@ function normalizePrice(value) {
   return Math.round(amount * 100) / 100;
 }
 
+function normalizeOptionalPrice(value) {
+  if (value === null || value === undefined || String(value).trim() === '') {
+    return null;
+  }
+  return normalizePrice(value);
+}
+
 function normalizeSizes(values) {
   if (!Array.isArray(values)) return [];
   const seen = new Set();
@@ -139,6 +147,7 @@ function normalizeMerchItem(candidate) {
   const includeSizes =
     candidate.includeSizes === true ||
     (Array.isArray(candidate.sizes) && normalizeSizes(candidate.sizes).length > 0);
+  const twoXlPrice = normalizeOptionalPrice(candidate.twoXlPrice);
 
   return {
     id,
@@ -148,16 +157,22 @@ function normalizeMerchItem(candidate) {
     sizes: includeSizes ? [...STANDARD_SIZES] : [],
     allowInitials: Boolean(candidate.allowInitials),
     paused: Boolean(candidate.paused),
+    twoXlPrice: includeSizes ? twoXlPrice : null,
     createdAt: candidate.createdAt || new Date().toISOString()
   };
 }
 
 function readMerchItems() {
+  const fileExisted = fs.existsSync(MERCH_ITEMS_PATH);
   const rawItems = readJsonArray(MERCH_ITEMS_PATH);
   const normalized = rawItems.map(normalizeMerchItem).filter(Boolean);
 
   if (normalized.length > 0) {
     return normalized;
+  }
+
+  if (fileExisted) {
+    return [];
   }
 
   const seeded = DEFAULT_MERCH_ITEMS.map((item) => ({ ...item }));
@@ -330,6 +345,8 @@ async function maybeSendOrderEmail(order, user, item) {
     `Item: ${item.name}`,
     `Size: ${order.selectedSize || 'N/A'}`,
     `Include Initials: ${order.includeInitials ? 'Yes' : 'No'}`,
+    `Unit Price: $${Number(order.unitPrice || 0).toFixed(2)}`,
+    `Total: $${Number(order.totalPrice || 0).toFixed(2)}`,
     `Quantity: ${order.quantity}`,
     `Venmo Agreed: ${order.venmoAgreed ? 'Yes' : 'No'}`,
     `Ordered At: ${order.createdAt}`,
@@ -559,6 +576,7 @@ app.post('/api/admin/merch', authRequired, ownerRequired, (req, res) => {
   const imageDataUrl = String(req.body?.imageDataUrl || '').trim();
   const includeSizes = Boolean(req.body?.includeSizes);
   const allowInitials = Boolean(req.body?.allowInitials);
+  const twoXlPrice = normalizeOptionalPrice(req.body?.twoXlPrice);
 
   if (!name) {
     return res.status(400).json({ error: 'Product name is required' });
@@ -568,6 +586,12 @@ app.post('/api/admin/merch', authRequired, ownerRequired, (req, res) => {
   }
   if (!imageDataUrl) {
     return res.status(400).json({ error: 'PNG image is required' });
+  }
+  if (includeSizes && req.body?.twoXlPrice !== undefined && twoXlPrice === null) {
+    return res.status(400).json({ error: '2XL price must be a valid amount' });
+  }
+  if (!includeSizes && twoXlPrice !== null) {
+    return res.status(400).json({ error: 'Enable sizes before setting a 2XL price' });
   }
 
   const itemId = `item-${Date.now()}-${crypto.randomBytes(2).toString('hex')}`;
@@ -585,6 +609,7 @@ app.post('/api/admin/merch', authRequired, ownerRequired, (req, res) => {
     sizes: includeSizes ? [...STANDARD_SIZES] : [],
     allowInitials,
     paused: false,
+    twoXlPrice: includeSizes ? twoXlPrice : null,
     createdAt: new Date().toISOString()
   };
   items.push(item);
@@ -602,8 +627,9 @@ app.patch('/api/admin/merch/:itemId', authRequired, ownerRequired, (req, res) =>
   const hasIncludeSizes = Object.prototype.hasOwnProperty.call(req.body || {}, 'includeSizes');
   const hasAllowInitials = Object.prototype.hasOwnProperty.call(req.body || {}, 'allowInitials');
   const hasPaused = Object.prototype.hasOwnProperty.call(req.body || {}, 'paused');
+  const hasTwoXlPrice = Object.prototype.hasOwnProperty.call(req.body || {}, 'twoXlPrice');
 
-  if (!hasIncludeSizes && !hasAllowInitials && !hasPaused) {
+  if (!hasIncludeSizes && !hasAllowInitials && !hasPaused && !hasTwoXlPrice) {
     return res.status(400).json({ error: 'No product updates provided' });
   }
 
@@ -618,6 +644,9 @@ app.patch('/api/admin/merch/:itemId', authRequired, ownerRequired, (req, res) =>
 
   if (hasIncludeSizes) {
     updated.sizes = Boolean(req.body.includeSizes) ? [...STANDARD_SIZES] : [];
+    if (updated.sizes.length === 0) {
+      updated.twoXlPrice = null;
+    }
   }
 
   if (hasAllowInitials) {
@@ -628,10 +657,54 @@ app.patch('/api/admin/merch/:itemId', authRequired, ownerRequired, (req, res) =>
     updated.paused = Boolean(req.body.paused);
   }
 
+  if (hasTwoXlPrice) {
+    if (!Array.isArray(updated.sizes) || updated.sizes.length === 0) {
+      return res.status(400).json({ error: 'Enable sizes before setting a 2XL price' });
+    }
+    const normalizedTwoXlPrice = normalizeOptionalPrice(req.body.twoXlPrice);
+    if (req.body.twoXlPrice !== null && req.body.twoXlPrice !== '' && normalizedTwoXlPrice === null) {
+      return res.status(400).json({ error: '2XL price must be a valid amount' });
+    }
+    updated.twoXlPrice = normalizedTwoXlPrice;
+  }
+
   items[index] = updated;
   writeMerchItems(items);
 
   return res.json({ success: true, item: updated, items });
+});
+
+app.delete('/api/admin/merch/:itemId', authRequired, ownerRequired, (req, res) => {
+  const itemId = String(req.params.itemId || '').trim();
+  if (!itemId) {
+    return res.status(400).json({ error: 'itemId is required' });
+  }
+
+  const items = readMerchItems();
+  const index = items.findIndex((item) => item.id === itemId);
+  if (index < 0) {
+    return res.status(404).json({ error: 'Product not found' });
+  }
+
+  const [removed] = items.splice(index, 1);
+  writeMerchItems(items);
+
+  const imagePath = String(removed?.image || '');
+  if (imagePath.startsWith('/uploads/')) {
+    const filename = path.basename(imagePath);
+    if (/^[A-Za-z0-9._-]+$/.test(filename)) {
+      const absolutePath = path.join(UPLOADS_DIR, filename);
+      if (fs.existsSync(absolutePath)) {
+        try {
+          fs.unlinkSync(absolutePath);
+        } catch {
+          // Ignore file-delete issues; product is already removed from catalog.
+        }
+      }
+    }
+  }
+
+  return res.json({ success: true, removedItem: removed, items });
 });
 
 app.get('/api/admin/orders', authRequired, ownerRequired, (_req, res) => {
@@ -765,6 +838,11 @@ app.post('/api/orders', authRequired, async (req, res) => {
   }
 
   const includeInitials = item.allowInitials ? includeInitialsRequested : false;
+  const unitPrice =
+    selectedSize === '2XL' && normalizeOptionalPrice(item.twoXlPrice) !== null
+      ? normalizeOptionalPrice(item.twoXlPrice)
+      : item.price;
+  const totalPrice = Math.round(qty * Number(unitPrice) * 100) / 100;
 
   const order = {
     id: crypto.randomUUID(),
@@ -772,6 +850,8 @@ app.post('/api/orders', authRequired, async (req, res) => {
     itemName: item.name,
     includeInitials,
     selectedSize,
+    unitPrice,
+    totalPrice,
     quantity: qty,
     venmoAgreed: Boolean(venmoAgreed),
     userId: req.user.id,

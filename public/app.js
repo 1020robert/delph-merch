@@ -461,13 +461,31 @@ async function setupProductPage() {
   }
 
   productTitle.textContent = item.name;
-  productPrice.textContent = formatCurrency(item.price);
+  const basePrice = Number(item.price) || 0;
+  const twoXlOverride = Number(item.twoXlPrice);
   productImage.src = item.image || '/hat2.png';
   productImage.alt = item.name;
   productImage.decoding = 'async';
 
   let selectedSize = Array.isArray(item.sizes) && item.sizes.length > 0 ? item.sizes[0] : null;
   let initialsCheckbox = null;
+
+  function getSelectedUnitPrice() {
+    if (
+      selectedSize === '2XL' &&
+      Number.isFinite(twoXlOverride) &&
+      twoXlOverride > 0 &&
+      Array.isArray(item.sizes) &&
+      item.sizes.includes('2XL')
+    ) {
+      return twoXlOverride;
+    }
+    return basePrice;
+  }
+
+  function refreshDisplayedPrice() {
+    productPrice.textContent = formatCurrency(getSelectedUnitPrice());
+  }
 
   if (productOptions) {
     productOptions.innerHTML = '';
@@ -491,6 +509,7 @@ async function setupProductPage() {
             candidate.classList.remove('active');
           });
           button.classList.add('active');
+          refreshDisplayedPrice();
         });
         sizeGrid.appendChild(button);
       });
@@ -508,6 +527,8 @@ async function setupProductPage() {
       productOptions.appendChild(initialsRow);
     }
   }
+
+  refreshDisplayedPrice();
 
   orderButton.addEventListener('click', async () => {
     if (Array.isArray(item.sizes) && item.sizes.length > 0 && !selectedSize) {
@@ -571,6 +592,7 @@ async function setupAdminOrdersPage() {
   const newProductPrice = document.getElementById('newProductPrice');
   const newProductImage = document.getElementById('newProductImage');
   const newProductIncludeSizes = document.getElementById('newProductIncludeSizes');
+  const newProductTwoXlPrice = document.getElementById('newProductTwoXlPrice');
   const newProductAllowInitials = document.getElementById('newProductAllowInitials');
 
   let user;
@@ -778,6 +800,18 @@ async function setupAdminOrdersPage() {
       .forEach((item) => {
         const includeSizes = Array.isArray(item.sizes) && item.sizes.length > 0;
         const isLive = !item.paused;
+        const twoXlPriceValue = Number(item.twoXlPrice);
+        const twoXlPriceEnabled = includeSizes;
+        const twoXlPriceText =
+          twoXlPriceEnabled && Number.isFinite(twoXlPriceValue) && twoXlPriceValue > 0
+            ? formatCurrency(twoXlPriceValue)
+            : twoXlPriceEnabled
+              ? 'Base price'
+              : 'N/A';
+        const twoXlInputValue =
+          twoXlPriceEnabled && Number.isFinite(twoXlPriceValue) && twoXlPriceValue > 0
+            ? String(twoXlPriceValue)
+            : '';
         const card = document.createElement('article');
         card.className = 'owner-product-card';
         const sizesText = includeSizes ? 'S, M, L, XL, 2XL' : 'Off';
@@ -787,6 +821,7 @@ async function setupAdminOrdersPage() {
             <h4 class="owner-product-name">${escapeHtml(item.name || '')}</h4>
             <p class="owner-product-price">${formatCurrency(item.price)}</p>
             <p class="owner-product-meta">Sizes: ${escapeHtml(sizesText)}</p>
+            <p class="owner-product-meta">2XL Price: ${escapeHtml(twoXlPriceText)}</p>
             <p class="owner-product-meta">Status: ${isLive ? 'Live' : 'Paused'}</p>
             <div class="owner-product-controls">
               <label class="owner-toggle-row">
@@ -801,6 +836,24 @@ async function setupAdminOrdersPage() {
                 <input type="checkbox" data-action="toggle-live" ${isLive ? 'checked' : ''} />
                 Live on shop
               </label>
+              <div class="owner-price-row">
+                <input
+                  type="number"
+                  min="0.01"
+                  max="10000"
+                  step="0.01"
+                  data-action="twoxl-price"
+                  value="${escapeHtml(twoXlInputValue)}"
+                  placeholder="2XL price"
+                  ${twoXlPriceEnabled ? '' : 'disabled'}
+                />
+                <button type="button" class="secondary-btn" data-action="save-twoxl" ${twoXlPriceEnabled ? '' : 'disabled'}>
+                  Save 2XL Price
+                </button>
+              </div>
+              <button type="button" class="secondary-btn owner-delete-btn" data-action="delete-product">
+                Delete Product
+              </button>
             </div>
           </div>
         `;
@@ -808,6 +861,9 @@ async function setupAdminOrdersPage() {
         const toggleSizesInput = card.querySelector('[data-action="toggle-sizes"]');
         const toggleInitialsInput = card.querySelector('[data-action="toggle-initials"]');
         const toggleLiveInput = card.querySelector('[data-action="toggle-live"]');
+        const twoXlInput = card.querySelector('[data-action="twoxl-price"]');
+        const saveTwoXlBtn = card.querySelector('[data-action="save-twoxl"]');
+        const deleteProductBtn = card.querySelector('[data-action="delete-product"]');
 
         async function updateItemSettings(patch, changedInput, fallbackValue, successMessage) {
           if (!changedInput) return;
@@ -861,6 +917,64 @@ async function setupAdminOrdersPage() {
               isLive,
               nextLiveValue ? `${item.name} is now live.` : `${item.name} is now paused.`
             );
+          });
+        }
+
+        if (saveTwoXlBtn && twoXlInput) {
+          saveTwoXlBtn.addEventListener('click', async () => {
+            if (!includeSizes) {
+              setMessage(productFormMessage, 'Enable sizes before setting a 2XL price.', 'error');
+              return;
+            }
+
+            const rawValue = String(twoXlInput.value || '').trim();
+            const parsedValue = rawValue === '' ? null : Number(rawValue);
+            if (rawValue !== '' && (!Number.isFinite(parsedValue) || parsedValue <= 0)) {
+              setMessage(productFormMessage, '2XL price must be a valid amount.', 'error');
+              return;
+            }
+
+            twoXlInput.disabled = true;
+            saveTwoXlBtn.disabled = true;
+            setMessage(productFormMessage, `Saving 2XL price for ${item.name}...`);
+
+            try {
+              await api(`/api/admin/merch/${encodeURIComponent(item.id)}`, {
+                method: 'PATCH',
+                body: JSON.stringify({
+                  twoXlPrice: parsedValue
+                })
+              });
+              clearCachedMerchItems();
+              await refreshOwnerProducts();
+              setMessage(productFormMessage, `Updated 2XL price for ${item.name}.`, 'success');
+            } catch (err) {
+              twoXlInput.disabled = false;
+              saveTwoXlBtn.disabled = false;
+              setMessage(productFormMessage, err.message, 'error');
+            }
+          });
+        }
+
+        if (deleteProductBtn) {
+          deleteProductBtn.addEventListener('click', async () => {
+            const confirmed = window.confirm(`Delete "${item.name}" from the shop?`);
+            if (!confirmed) return;
+
+            deleteProductBtn.disabled = true;
+            setMessage(productFormMessage, `Deleting ${item.name}...`);
+
+            try {
+              await api(`/api/admin/merch/${encodeURIComponent(item.id)}`, {
+                method: 'DELETE'
+              });
+              clearCachedMerchItems();
+              await refreshOwnerProducts();
+              setMessage(productFormMessage, `${item.name} deleted.`, 'success');
+            } catch (err) {
+              deleteProductBtn.disabled = false;
+              setMessage(productFormMessage, err.message, 'error');
+            }
           });
         }
 
@@ -985,14 +1099,29 @@ async function setupAdminOrdersPage() {
     newProductPrice &&
     newProductImage &&
     newProductIncludeSizes &&
+    newProductTwoXlPrice &&
     newProductAllowInitials
   ) {
+    function syncTwoXlInputState() {
+      const includeSizes = Boolean(newProductIncludeSizes.checked);
+      newProductTwoXlPrice.disabled = !includeSizes;
+      if (!includeSizes) {
+        newProductTwoXlPrice.value = '';
+      }
+    }
+
+    newProductIncludeSizes.addEventListener('change', syncTwoXlInputState);
+    syncTwoXlInputState();
+
     addProductForm.addEventListener('submit', async (event) => {
       event.preventDefault();
 
       const name = String(newProductName.value || '').trim();
       const price = Number(newProductPrice.value || '');
       const imageFile = newProductImage.files?.[0] || null;
+      const includeSizes = Boolean(newProductIncludeSizes.checked);
+      const twoXlRaw = String(newProductTwoXlPrice.value || '').trim();
+      const twoXlPrice = twoXlRaw === '' ? null : Number(twoXlRaw);
 
       if (!name) {
         setMessage(productFormMessage, 'Product name is required.', 'error');
@@ -1000,6 +1129,14 @@ async function setupAdminOrdersPage() {
       }
       if (!Number.isFinite(price) || price <= 0) {
         setMessage(productFormMessage, 'Valid product price is required.', 'error');
+        return;
+      }
+      if (twoXlRaw !== '' && (!Number.isFinite(twoXlPrice) || twoXlPrice <= 0)) {
+        setMessage(productFormMessage, '2XL price must be a valid amount.', 'error');
+        return;
+      }
+      if (!includeSizes && twoXlRaw !== '') {
+        setMessage(productFormMessage, 'Enable sizes before setting a 2XL price.', 'error');
         return;
       }
       if (!imageFile) {
@@ -1024,13 +1161,15 @@ async function setupAdminOrdersPage() {
             name,
             price,
             imageDataUrl,
-            includeSizes: Boolean(newProductIncludeSizes.checked),
+            includeSizes,
+            twoXlPrice,
             allowInitials: Boolean(newProductAllowInitials.checked)
           })
         });
 
         clearCachedMerchItems();
         addProductForm.reset();
+        syncTwoXlInputState();
         await refreshOwnerProducts();
         setMessage(productFormMessage, 'Product published and live on shop.', 'success');
       } catch (err) {

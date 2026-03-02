@@ -817,10 +817,12 @@ input {
   }
 
   .merch-body:not(.product-body) {
-    background-image: url("/moose-bg.jpg");
-    background-repeat: no-repeat;
-    background-position: center top;
-    background-size: cover;
+    background-image:
+      linear-gradient(rgba(214, 228, 248, 0.72), rgba(214, 228, 248, 0.72)),
+      url("/moose-bg.jpg");
+    background-repeat: no-repeat, no-repeat;
+    background-position: center top, center top;
+    background-size: cover, cover;
     background-attachment: scroll;
   }
 
@@ -903,8 +905,8 @@ input {
 
 @media (max-width: 520px) {
   .merch-body:not(.product-body) {
-    background-position: center top;
-    background-size: cover;
+    background-position: center top, center top;
+    background-size: cover, cover;
   }
 
   .merch-body:not(.product-body) .merch-topbar {

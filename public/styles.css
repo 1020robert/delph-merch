@@ -705,6 +705,32 @@ input {
   color: #254a73;
 }
 
+.owner-product-controls {
+  margin-top: 8px;
+  display: grid;
+  gap: 6px;
+}
+
+.owner-toggle-row {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  font-weight: 600;
+  color: #12365a;
+}
+
+.owner-toggle-row input[type="checkbox"] {
+  width: 16px;
+  height: 16px;
+  margin: 0;
+  accent-color: #0a3f9e;
+}
+
+.owner-pause-btn {
+  width: fit-content;
+  margin-top: 4px;
+}
+
 .order-action-btn {
   border: 1px solid #0a3f9e;
   background: #0a3f9e;

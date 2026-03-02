@@ -553,7 +553,7 @@ async function setupAdminOrdersPage() {
   const newProductName = document.getElementById('newProductName');
   const newProductPrice = document.getElementById('newProductPrice');
   const newProductImage = document.getElementById('newProductImage');
-  const newProductCustomSizes = document.getElementById('newProductCustomSizes');
+  const newProductIncludeSizes = document.getElementById('newProductIncludeSizes');
   const newProductAllowInitials = document.getElementById('newProductAllowInitials');
 
   let user;
@@ -751,7 +751,7 @@ async function setupAdminOrdersPage() {
     ownerProductsList.innerHTML = '';
 
     if (ownerProducts.length === 0) {
-      ownerProductsList.innerHTML = '<p class="message">No products are live yet.</p>';
+      ownerProductsList.innerHTML = '<p class="message">No products yet.</p>';
       return;
     }
 
@@ -759,19 +759,94 @@ async function setupAdminOrdersPage() {
       .slice()
       .sort((a, b) => String(b.createdAt || '').localeCompare(String(a.createdAt || '')))
       .forEach((item) => {
+        const includeSizes = Array.isArray(item.sizes) && item.sizes.length > 0;
+        const isLive = !item.paused;
         const card = document.createElement('article');
         card.className = 'owner-product-card';
-        const sizesText =
-          Array.isArray(item.sizes) && item.sizes.length > 0 ? item.sizes.join(', ') : 'None';
+        const sizesText = includeSizes ? 'S, M, L, XL, 2XL' : 'Off';
         card.innerHTML = `
           <img src="${escapeHtml(item.image || '')}" alt="${escapeHtml(item.name || 'Product')}" class="owner-product-thumb" loading="lazy" decoding="async" />
           <div>
             <h4 class="owner-product-name">${escapeHtml(item.name || '')}</h4>
             <p class="owner-product-price">${formatCurrency(item.price)}</p>
             <p class="owner-product-meta">Sizes: ${escapeHtml(sizesText)}</p>
-            <p class="owner-product-meta">Initials Option: ${item.allowInitials ? 'Enabled' : 'Disabled'}</p>
+            <p class="owner-product-meta">Status: ${isLive ? 'Live' : 'Paused'}</p>
+            <div class="owner-product-controls">
+              <label class="owner-toggle-row">
+                <input type="checkbox" data-action="toggle-sizes" ${includeSizes ? 'checked' : ''} />
+                Include sizes (S, M, L, XL, 2XL)
+              </label>
+              <label class="owner-toggle-row">
+                <input type="checkbox" data-action="toggle-initials" ${item.allowInitials ? 'checked' : ''} />
+                Allow initials option
+              </label>
+              <label class="owner-toggle-row">
+                <input type="checkbox" data-action="toggle-live" ${isLive ? 'checked' : ''} />
+                Live on shop
+              </label>
+            </div>
           </div>
         `;
+
+        const toggleSizesInput = card.querySelector('[data-action="toggle-sizes"]');
+        const toggleInitialsInput = card.querySelector('[data-action="toggle-initials"]');
+        const toggleLiveInput = card.querySelector('[data-action="toggle-live"]');
+
+        async function updateItemSettings(patch, changedInput, fallbackValue, successMessage) {
+          if (!changedInput) return;
+          changedInput.disabled = true;
+          try {
+            await api(`/api/admin/merch/${encodeURIComponent(item.id)}`, {
+              method: 'PATCH',
+              body: JSON.stringify(patch)
+            });
+            clearCachedMerchItems();
+            await refreshOwnerProducts();
+            setMessage(productFormMessage, successMessage, 'success');
+          } catch (err) {
+            changedInput.checked = fallbackValue;
+            setMessage(productFormMessage, err.message, 'error');
+          } finally {
+            changedInput.disabled = false;
+          }
+        }
+
+        if (toggleSizesInput) {
+          toggleSizesInput.addEventListener('change', () => {
+            const nextValue = toggleSizesInput.checked;
+            updateItemSettings(
+              { includeSizes: nextValue },
+              toggleSizesInput,
+              includeSizes,
+              `Updated sizes for ${item.name}.`
+            );
+          });
+        }
+
+        if (toggleInitialsInput) {
+          toggleInitialsInput.addEventListener('change', () => {
+            const nextValue = toggleInitialsInput.checked;
+            updateItemSettings(
+              { allowInitials: nextValue },
+              toggleInitialsInput,
+              Boolean(item.allowInitials),
+              `Updated initials option for ${item.name}.`
+            );
+          });
+        }
+
+        if (toggleLiveInput) {
+          toggleLiveInput.addEventListener('change', () => {
+            const nextLiveValue = toggleLiveInput.checked;
+            updateItemSettings(
+              { paused: !nextLiveValue },
+              toggleLiveInput,
+              isLive,
+              nextLiveValue ? `${item.name} is now live.` : `${item.name} is now paused.`
+            );
+          });
+        }
+
         ownerProductsList.appendChild(card);
       });
   }
@@ -892,7 +967,7 @@ async function setupAdminOrdersPage() {
     newProductName &&
     newProductPrice &&
     newProductImage &&
-    newProductCustomSizes &&
+    newProductIncludeSizes &&
     newProductAllowInitials
   ) {
     addProductForm.addEventListener('submit', async (event) => {
@@ -901,15 +976,6 @@ async function setupAdminOrdersPage() {
       const name = String(newProductName.value || '').trim();
       const price = Number(newProductPrice.value || '');
       const imageFile = newProductImage.files?.[0] || null;
-
-      const checkedSizes = Array.from(
-        addProductForm.querySelectorAll('input[name="sizeOption"]:checked')
-      ).map((input) => String(input.value || '').trim());
-      const customSizes = String(newProductCustomSizes.value || '')
-        .split(',')
-        .map((value) => value.trim())
-        .filter(Boolean);
-      const sizes = Array.from(new Set([...checkedSizes, ...customSizes].map((value) => value.toUpperCase())));
 
       if (!name) {
         setMessage(productFormMessage, 'Product name is required.', 'error');
@@ -941,7 +1007,7 @@ async function setupAdminOrdersPage() {
             name,
             price,
             imageDataUrl,
-            sizes,
+            includeSizes: Boolean(newProductIncludeSizes.checked),
             allowInitials: Boolean(newProductAllowInitials.checked)
           })
         });

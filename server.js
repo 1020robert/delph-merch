@@ -36,9 +36,12 @@ const DEFAULT_MERCH_ITEMS = [
     image: '/hat2.png',
     sizes: [],
     allowInitials: false,
+    paused: false,
     createdAt: '2026-02-26T00:00:00.000Z'
   }
 ];
+
+const STANDARD_SIZES = ['S', 'M', 'L', 'XL', '2XL'];
 
 app.disable('x-powered-by');
 app.use(express.json({ limit: '8mb' }));
@@ -133,13 +136,18 @@ function normalizeMerchItem(candidate) {
   const price = normalizePrice(candidate.price);
   if (!id || !name || !image || price === null) return null;
 
+  const includeSizes =
+    candidate.includeSizes === true ||
+    (Array.isArray(candidate.sizes) && normalizeSizes(candidate.sizes).length > 0);
+
   return {
     id,
     name,
     price,
     image,
-    sizes: normalizeSizes(candidate.sizes),
+    sizes: includeSizes ? [...STANDARD_SIZES] : [],
     allowInitials: Boolean(candidate.allowInitials),
+    paused: Boolean(candidate.paused),
     createdAt: candidate.createdAt || new Date().toISOString()
   };
 }
@@ -507,7 +515,7 @@ app.get('/api/auth/me', (req, res) => {
 });
 
 app.get('/api/merch', authRequired, (_req, res) => {
-  return res.json({ items: readMerchItems() });
+  return res.json({ items: readMerchItems().filter((item) => !item.paused) });
 });
 
 app.get('/api/admin/merch', authRequired, ownerRequired, (_req, res) => {
@@ -518,7 +526,7 @@ app.post('/api/admin/merch', authRequired, ownerRequired, (req, res) => {
   const name = String(req.body?.name || '').trim();
   const price = normalizePrice(req.body?.price);
   const imageDataUrl = String(req.body?.imageDataUrl || '').trim();
-  const sizes = normalizeSizes(req.body?.sizes);
+  const includeSizes = Boolean(req.body?.includeSizes);
   const allowInitials = Boolean(req.body?.allowInitials);
 
   if (!name) {
@@ -543,14 +551,56 @@ app.post('/api/admin/merch', authRequired, ownerRequired, (req, res) => {
     name,
     price,
     image: uploadResult.imagePath,
-    sizes,
+    sizes: includeSizes ? [...STANDARD_SIZES] : [],
     allowInitials,
+    paused: false,
     createdAt: new Date().toISOString()
   };
   items.push(item);
   writeMerchItems(items);
 
   return res.json({ success: true, item, items });
+});
+
+app.patch('/api/admin/merch/:itemId', authRequired, ownerRequired, (req, res) => {
+  const itemId = String(req.params.itemId || '').trim();
+  if (!itemId) {
+    return res.status(400).json({ error: 'itemId is required' });
+  }
+
+  const hasIncludeSizes = Object.prototype.hasOwnProperty.call(req.body || {}, 'includeSizes');
+  const hasAllowInitials = Object.prototype.hasOwnProperty.call(req.body || {}, 'allowInitials');
+  const hasPaused = Object.prototype.hasOwnProperty.call(req.body || {}, 'paused');
+
+  if (!hasIncludeSizes && !hasAllowInitials && !hasPaused) {
+    return res.status(400).json({ error: 'No product updates provided' });
+  }
+
+  const items = readMerchItems();
+  const index = items.findIndex((item) => item.id === itemId);
+  if (index < 0) {
+    return res.status(404).json({ error: 'Product not found' });
+  }
+
+  const current = items[index];
+  const updated = { ...current };
+
+  if (hasIncludeSizes) {
+    updated.sizes = Boolean(req.body.includeSizes) ? [...STANDARD_SIZES] : [];
+  }
+
+  if (hasAllowInitials) {
+    updated.allowInitials = Boolean(req.body.allowInitials);
+  }
+
+  if (hasPaused) {
+    updated.paused = Boolean(req.body.paused);
+  }
+
+  items[index] = updated;
+  writeMerchItems(items);
+
+  return res.json({ success: true, item: updated, items });
 });
 
 app.get('/api/admin/orders', authRequired, ownerRequired, (_req, res) => {
@@ -667,6 +717,9 @@ app.post('/api/orders', authRequired, async (req, res) => {
   const item = readMerchItems().find((x) => x.id === itemId);
   if (!item) {
     return res.status(404).json({ error: 'Merch item not found' });
+  }
+  if (item.paused) {
+    return res.status(400).json({ error: 'This item is currently unavailable' });
   }
 
   let selectedSize = null;

@@ -4,7 +4,7 @@
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
     <title>Club Merch Orders</title>
-    <link rel="stylesheet" href="/styles.css?v=20260302a" />
+    <link rel="stylesheet" href="/styles.css?v=20260302b" />
   </head>
   <body>
     <header class="topbar">
@@ -95,21 +95,9 @@
                 <input id="newProductImage" type="file" accept="image/png" required />
               </label>
 
-              <fieldset class="size-fieldset">
-                <legend>Sizes (optional)</legend>
-                <div class="size-checkbox-grid">
-                  <label><input type="checkbox" name="sizeOption" value="S" /> S</label>
-                  <label><input type="checkbox" name="sizeOption" value="M" /> M</label>
-                  <label><input type="checkbox" name="sizeOption" value="L" /> L</label>
-                  <label><input type="checkbox" name="sizeOption" value="XL" /> XL</label>
-                  <label><input type="checkbox" name="sizeOption" value="2XL" /> 2XL</label>
-                  <label><input type="checkbox" name="sizeOption" value="3XL" /> 3XL</label>
-                </div>
-              </fieldset>
-
-              <label>
-                Custom Sizes (optional, comma separated)
-                <input id="newProductCustomSizes" type="text" maxlength="120" placeholder="Youth M, 4XL" />
+              <label class="venmo-row">
+                <input id="newProductIncludeSizes" type="checkbox" />
+                Include sizes (S, M, L, XL, 2XL)
               </label>
 
               <label class="venmo-row">
@@ -123,7 +111,7 @@
           </section>
 
           <section class="intro-card">
-            <h3 class="manage-products-title">Live Products</h3>
+            <h3 class="manage-products-title">Products</h3>
             <div id="ownerProductsList" class="owner-products-list"></div>
           </section>
         </div>
@@ -132,6 +120,6 @@
       <p id="ordersMessage" class="message"></p>
     </main>
 
-    <script src="/app.js?v=20260302a"></script>
+    <script src="/app.js?v=20260302b"></script>
   </body>
 </html>
